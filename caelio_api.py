@@ -433,7 +433,7 @@ def create_book_detail(book_row) -> BookDetail:
         manufacturer=safe_string_value(book_row.get('manufacturer', '')),
         cover_link=safe_string_value(book_row.get('cover_link', '')),
         summary=safe_string_value(book_row.get('summary', '')),
-        # content=safe_string_value(book_row.get('content', ''))
+        content=' '.join(safe_string_value(book_row.get('content', '')).split()[:100])
     )
 
 def load_book_database():
