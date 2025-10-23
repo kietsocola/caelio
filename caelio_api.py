@@ -273,6 +273,133 @@ def get_professional_book_suggestions(field: str, motivation: str, style: str, p
     
     return list(set(suggestions))  # Loại bỏ duplicate
 
+def map_professional_to_personality_group(field: str, motivation: str, style: str, presentation: str) -> str:
+    """Map từ professional answers sang personality group phù hợp"""
+    # Logic mapping dựa trên đặc điểm của từng group
+    
+    # Business thường là Chinh phục hoặc Kiến tạo
+    if field == 'business':
+        if motivation == 'exploratory':
+            return 'Chinh phục'  # Khám phá cơ hội, thách thức
+        else:
+            return 'Kiến tạo'    # Xây dựng, phát triển
+    
+    # Technology/Science thường là Tri thức hoặc Kiến tạo
+    elif field in ['technology', 'science']:
+        if motivation == 'foundational':
+            return 'Tri thức'    # Tìm hiểu bản chất
+        else:
+            return 'Kiến tạo'    # Ứng dụng thực tế
+    
+    # Humanities thường là Kết nối hoặc Tri thức
+    elif field == 'humanities':
+        if style == 'integrative':
+            return 'Kết nối'     # Liên kết con người, xã hội
+        else:
+            return 'Tri thức'    # Tìm hiểu sâu sắc
+    
+    # Arts thường là Tự do hoặc Kết nối
+    elif field == 'arts':
+        if presentation == 'narrative':
+            return 'Kết nối'     # Kể chuyện, cảm xúc
+        else:
+            return 'Tự do'       # Sáng tạo, thể hiện cá tính
+    
+    # Education thường là Kết nối
+    elif field == 'education':
+        return 'Kết nối'         # Giáo dục là kết nối con người
+    
+    # Medical thường là Kết nối hoặc Tri thức
+    elif field == 'medical':
+        if motivation == 'practical':
+            return 'Kết nối'     # Chăm sóc con người
+        else:
+            return 'Tri thức'    # Nghiên cứu y học
+    
+    # Agriculture thường là Kiến tạo
+    elif field == 'agriculture':
+        return 'Kiến tạo'        # Xây dựng, sản xuất
+    
+    # Default fallback
+    return 'Tri thức'
+
+def get_personality_keywords_for_matching(primary_group: str, is_synthesizer: bool) -> List[str]:
+    """Lấy keywords để match sách theo personality group"""
+    base_keywords = {
+        'Kết nối': [
+            # Tâm lý - cảm xúc
+            'tâm lý', 'cảm xúc', 'tình yêu', 'gia đình', 'mối quan hệ', 'kết nối', 'giao tiếp',
+            'đồng cảm', 'chia sẻ', 'yêu thương', 'chăm sóc', 'hỗ trợ', 'giúp đỡ',
+            # Văn học cảm xúc
+            'tiểu thuyết', 'tản văn', 'hồi ký', 'nhật ký', 'thư từ', 'truyện ngắn',
+            'văn học', 'tình cảm', 'lãng mạn', 'gia đình', 'tuổi thơ', 'kỷ niệm',
+            # Phát triển bản thân - mối quan hệ
+            'phát triển bản thân', 'kỹ năng mềm', 'lãnh đạo', 'teamwork', 'hợp tác',
+            'xây dựng', 'nuôi dưỡng', 'giáo dục', 'con trẻ', 'parenting'
+        ],
+        'Tự do': [
+            # Du lịch - khám phá
+            'du lịch', 'khám phá', 'phiêu lưu', 'xê dịch', 'văn hóa', 'thế giới',
+            'tự do', 'độc lập', 'cá nhân', 'bản sắc', 'cá tính', 'phong cách',
+            # Nghệ thuật - sáng tạo  
+            'nghệ thuật', 'sáng tạo', 'thiết kế', 'hội họa', 'nhiếp ảnh', 'âm nhạc',
+            'thời trang', 'làm đẹp', 'phong cách sống', 'lifestyle', 'trang trí',
+            # Tư duy độc lập
+            'tư duy', 'suy nghĩ', 'quan điểm', 'góc nhìn', 'phản biện', 'độc đáo',
+            'khác biệt', 'đổi mới', 'sáng kiến', 'breakthrough', 'innovation'
+        ],
+        'Tri thức': [
+            # Khoa học - nghiên cứu
+            'khoa học', 'nghiên cứu', 'lý thuyết', 'phương pháp', 'phân tích', 'logic',
+            'toán học', 'vật lý', 'hóa học', 'sinh học', 'địa lý', 'thiên văn',
+            'công nghệ', 'kỹ thuật', 'máy tính', 'lập trình', 'ai', 'robotics',
+            # Lịch sử - triết học
+            'lịch sử', 'triết học', 'tôn giáo', 'văn minh', 'nhân loại', 'xã hội',
+            'chính trị', 'kinh tế học', 'tâm lý học', 'xã hội học', 'nhân học',
+            # Học thuật
+            'giáo trình', 'học thuật', 'nghiên cứu', 'luận văn', 'bài báo', 'chuyên ngành',
+            'đại học', 'cao học', 'tiến sĩ', 'giáo sư', 'chuyên gia', 'expert'
+        ],
+        'Chinh phục': [
+            # Thành công - lãnh đạo
+            'thành công', 'chiến thắng', 'đạt được', 'mục tiêu', 'kết quả', 'hiệu quả',
+            'lãnh đạo', 'quản lý', 'điều hành', 'chỉ đạo', 'dẫn dắt', 'leadership',
+            'CEO', 'giám đốc', 'sếp', 'quản lý', 'teamlead', 'manager',
+            # Thách thức - cạnh tranh
+            'thách thức', 'cạnh tranh', 'đối đầu', 'vượt qua', 'chinh phục', 'đột phá',
+            'chiến lược', 'tactic', 'kế hoạch', 'planning', 'strategy', 'execution',
+            # Truyền cảm hứng
+            'truyền cảm hứng', 'động lực', 'motivation', 'inspiring', 'passionate',
+            'quyết tâm', 'ý chí', 'bền bỉ', 'kiên trì', 'vượt khó', 'overcome'
+        ],
+        'Kiến tạo': [
+            # Kinh doanh - khởi nghiệp
+            'kinh doanh', 'khởi nghiệp', 'startup', 'doanh nghiệp', 'công ty', 'business',
+            'marketing', 'bán hàng', 'sales', 'customer', 'khách hàng', 'thị trường',
+            'đầu tư', 'tài chính', 'ngân hàng', 'chứng khoán', 'real estate', 'bất động sản',
+            # Kỹ năng thực tế
+            'kỹ năng', 'thực hành', 'ứng dụng', 'practical', 'hands-on', 'tutorial',
+            'hướng dẫn', 'cẩm nang', 'manual', 'guide', 'how-to', 'step-by-step',
+            # Xây dựng - phát triển
+            'xây dựng', 'phát triển', 'tăng trưởng', 'growth', 'scale', 'expansion',
+            'hệ thống', 'quy trình', 'process', 'system', 'framework', 'methodology'
+        ]
+    }
+    
+    keywords = base_keywords.get(primary_group, [])
+    
+    # Nếu là synthesizer, thêm keywords liên ngành
+    if is_synthesizer:
+        synthesizer_keywords = [
+            'liên ngành', 'đa ngành', 'tổng hợp', 'kết hợp', 'tích hợp', 'interdisciplinary',
+            'multidisciplinary', 'cross-functional', 'holistic', 'comprehensive',
+            'tư duy hệ thống', 'systems thinking', 'big picture', 'toàn cảnh',
+            'liên kết', 'kết nối', 'integration', 'synthesis', 'convergence'
+        ]
+        keywords.extend(synthesizer_keywords)
+    
+    return keywords
+
 def create_book_list_item(book_row) -> BookListItem:
     """Create BookListItem object with safe string handling (without content)"""
     return BookListItem(
@@ -604,35 +731,66 @@ async def get_book_recommendations(answers: PersonalityAnswers, top_n: int = 20)
         description = get_personality_description(profile['primary_group'], profile['is_synthesizer'])
         
         # Load dữ liệu sách
-        book_file = 'dataset/books_full_data.csv'
-        if not os.path.exists(book_file):
-            # Fallback files
-            fallback_files = [
-                'books_full_data.csv',
-                '../dataset/books_full_data.csv',
-                'v2/labeled_books_v2.csv'
-            ]
-            
-            book_df = None
-            for file_path in fallback_files:
-                if os.path.exists(file_path):
-                    book_file = file_path
-                    break
-            
-            if not os.path.exists(book_file):
-                raise HTTPException(status_code=404, detail="Book database not found")
+        book_df = load_book_database()
         
-        book_df = pd.read_csv(book_file)
+        # Lấy gợi ý sách với improved matching (same as /discover)
+        personality_keywords = get_personality_keywords_for_matching(profile['primary_group'], profile['is_synthesizer'])
         
-        # Lấy gợi ý sách
-        # Ensure we pass a complete answers dict (Q1..Q8) to the matcher
-        complete_answers = ensure_complete_discovery_answers(answers_dict)
-        result = book_matcher.get_personalized_recommendations(complete_answers, book_df, top_n=top_n)
-
-        # Chuyển đổi recommendations sang format API
+        # Score và filter sách
+        scored_books = []
+        for _, book in book_df.iterrows():
+            cat = safe_string_value(book.get('category', '')).lower()
+            title = safe_string_value(book.get('title', '')).lower() 
+            summary = safe_string_value(book.get('summary', '')).lower()
+            content = safe_string_value(book.get('content', '')).lower()
+            
+            # Calculate match score
+            match_score = 0.0
+            total_keywords = len(personality_keywords)
+            
+            for keyword in personality_keywords:
+                keyword_score = 0
+                if keyword in cat:
+                    keyword_score += 3
+                if keyword in title:
+                    keyword_score += 2
+                if keyword in summary:
+                    keyword_score += 1
+                if keyword in content:
+                    keyword_score += 0.5
+                
+                if keyword_score > 0:
+                    match_score += keyword_score / total_keywords
+            
+            # Sales and quality bonuses
+            quantity = float(book.get('quantity', 0)) if pd.notna(book.get('quantity')) else 0
+            sales_boost = min(quantity / 10000, 1.0) * 0.2
+            
+            avg_rating = float(book.get('avg_rating', 0)) if pd.notna(book.get('avg_rating')) else 0
+            n_review = int(book.get('n_review', 0)) if pd.notna(book.get('n_review')) else 0
+            
+            rating_boost = (avg_rating / 5.0) * 0.1 if avg_rating > 0 else 0
+            review_boost = min(n_review / 1000, 1.0) * 0.1 if n_review > 0 else 0
+            
+            final_score = match_score + sales_boost + rating_boost + review_boost
+            
+            if final_score > 0.05:
+                scored_books.append((book, final_score))
+        
+        # Sort by score and sales
+        scored_books.sort(key=lambda x: (x[1], float(x[0].get('quantity', 0)) if pd.notna(x[0].get('quantity')) else 0), reverse=True)
+        
+        # Create recommendations
         recommendations = []
-        for _, book in result['recommendations'].iterrows():
-            recommendations.append(create_book_recommendation(book))
+        match_distribution = {}
+        
+        for book, score in scored_books[:top_n]:
+            book_rec = create_book_recommendation(book)
+            book_rec.personality_match_score = score
+            recommendations.append(book_rec)
+            
+            category = safe_string_value(book.get('category', 'Unknown'))
+            match_distribution[category] = match_distribution.get(category, 0) + 1
         
         # Tạo profile response
         profile_response = PersonalityProfile(
@@ -652,8 +810,8 @@ async def get_book_recommendations(answers: PersonalityAnswers, top_n: int = 20)
         return RecommendationResult(
             profile=profile_response,
             recommendations=recommendations,
-            total_matches=result['total_matches'],
-            match_distribution=result['match_distribution']
+            total_matches=len(scored_books),
+            match_distribution=match_distribution
         )
         
     except Exception as e:
@@ -740,33 +898,69 @@ async def discover_and_recommend(answers: PersonalityAnswers, top_n: int = 20):
         description = get_personality_description(profile['primary_group'], profile['is_synthesizer'])
         
         # Load dữ liệu sách
-        book_file = 'dataset/books_full_data.csv'
-        if not os.path.exists(book_file):
-            fallback_files = [
-                'books_full_data.csv',
-                '../dataset/books_full_data.csv', 
-                'v2/labeled_books_v2.csv'
-            ]
-            
-            for file_path in fallback_files:
-                if os.path.exists(file_path):
-                    book_file = file_path
-                    break
-            
-            if not os.path.exists(book_file):
-                raise HTTPException(status_code=404, detail="Book database not found")
+        book_df = load_book_database()
         
-        book_df = pd.read_csv(book_file)
+        # Lấy gợi ý sách với improved matching
+        # Get keywords for personality matching
+        personality_keywords = get_personality_keywords_for_matching(profile['primary_group'], profile['is_synthesizer'])
         
-        # Lấy gợi ý sách
-        # Ensure we pass a complete answers dict (Q1..Q8) to the matcher
-        complete_answers = ensure_complete_discovery_answers(answers_dict)
-        result = book_matcher.get_personalized_recommendations(complete_answers, book_df, top_n=top_n)
-
-        # Chuyển đổi recommendations sang format API
+        # Score và filter sách
+        scored_books = []
+        for _, book in book_df.iterrows():
+            cat = safe_string_value(book.get('category', '')).lower()
+            title = safe_string_value(book.get('title', '')).lower() 
+            summary = safe_string_value(book.get('summary', '')).lower()
+            content = safe_string_value(book.get('content', '')).lower()
+            
+            # Calculate match score based on keywords
+            match_score = 0.0
+            total_keywords = len(personality_keywords)
+            
+            for keyword in personality_keywords:
+                keyword_score = 0
+                if keyword in cat:
+                    keyword_score += 3  # Category match is most important
+                if keyword in title:
+                    keyword_score += 2  # Title match is very important
+                if keyword in summary:
+                    keyword_score += 1  # Summary match is important
+                if keyword in content:
+                    keyword_score += 0.5  # Content match is less important
+                
+                if keyword_score > 0:
+                    match_score += keyword_score / total_keywords
+            
+            # Bonus for sales volume (quantity)
+            quantity = float(book.get('quantity', 0)) if pd.notna(book.get('quantity')) else 0
+            sales_boost = min(quantity / 10000, 1.0) * 0.2  # Max 20% boost for high sales
+            
+            # Bonus for rating and reviews
+            avg_rating = float(book.get('avg_rating', 0)) if pd.notna(book.get('avg_rating')) else 0
+            n_review = int(book.get('n_review', 0)) if pd.notna(book.get('n_review')) else 0
+            
+            rating_boost = (avg_rating / 5.0) * 0.1 if avg_rating > 0 else 0  # Max 10% boost for high rating
+            review_boost = min(n_review / 1000, 1.0) * 0.1 if n_review > 0 else 0  # Max 10% boost for many reviews
+            
+            final_score = match_score + sales_boost + rating_boost + review_boost
+            
+            if final_score > 0.05:  # Threshold for inclusion
+                scored_books.append((book, final_score))
+        
+        # Sort by score (descending) and sales volume (descending)
+        scored_books.sort(key=lambda x: (x[1], float(x[0].get('quantity', 0)) if pd.notna(x[0].get('quantity')) else 0), reverse=True)
+        
+        # Take top_n recommendations
         recommendations = []
-        for _, book in result['recommendations'].iterrows():
-            recommendations.append(create_book_recommendation(book))
+        match_distribution = {}
+        
+        for book, score in scored_books[:top_n]:
+            book_rec = create_book_recommendation(book)
+            book_rec.personality_match_score = score
+            recommendations.append(book_rec)
+            
+            # Track distribution
+            category = safe_string_value(book.get('category', 'Unknown'))
+            match_distribution[category] = match_distribution.get(category, 0) + 1
         
         # Tạo profile response
         profile_response = PersonalityProfile(
@@ -786,14 +980,14 @@ async def discover_and_recommend(answers: PersonalityAnswers, top_n: int = 20):
         return RecommendationResult(
             profile=profile_response,
             recommendations=recommendations,
-            total_matches=result['total_matches'],
-            match_distribution=result['match_distribution']
+            total_matches=len(scored_books),
+            match_distribution=match_distribution
         )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error in discover and recommend: {str(e)}")
 
-@app.post("/professional", response_model=Dict[str, Any])
+@app.post("/professional", response_model=RecommendationResult)
 async def professional_and_recommend(answers: ProfessionalAnswers, top_n: int = 20):
     """API tổng hợp chuyên ngành: Phân tích + Gợi ý sách từ 4 câu hỏi chuyên ngành"""
     try:
@@ -822,41 +1016,30 @@ async def professional_and_recommend(answers: ProfessionalAnswers, top_n: int = 
         if professional_dict['Q4'] == 'C':  # Kết nối đa ngành
             synthesizer_indicators += 1
         
-        # Use personalized matcher with professional context
-        # Convert professional answers to discovery-style answers for compatibility
-        discovery_answers = {
-            'Q1': professional_dict.get('Q1', 'A'),
-            'Q2': professional_dict.get('Q2', 'A'), 
-            'Q3': professional_dict.get('Q3', 'A'),
-            'Q4': 'A',  # Default for remaining questions
-            'Q5': 'A',
-            'Q6': 'A', 
-            'Q7': 'A',
-            'Q8': 'A'
+        is_synthesizer = synthesizer_indicators >= 2
+        
+        # Map professional answers sang personality group hợp lý
+        primary_group = map_professional_to_personality_group(field, motivation, style, presentation)
+        
+        # Tạo personality profile từ professional context
+        profile = {
+            'primary_group': primary_group,
+            'secondary_group': None,
+            'primary_score': 100,  # Professional context gives strong indication
+            'secondary_score': 0,
+            'synthesizer_score': synthesizer_indicators * 50,
+            'is_synthesizer': is_synthesizer,
+            'profile_name': f"{primary_group}{'–Synthesizer' if is_synthesizer else ''}",
+            'english_name': f"Professional {primary_group}{'–Synthesizer' if is_synthesizer else ''}",
+            'all_scores': {primary_group: 100, 'Synthesizer': synthesizer_indicators * 50},
+            'is_multi_motivated': False
         }
 
-        # Load book DB
-        book_file = 'dataset/books_full_data.csv'
-        if not os.path.exists(book_file):
-            fallback_files = [
-                'books_full_data.csv',
-                '../dataset/books_full_data.csv', 
-                'v2/labeled_books_v2.csv'
-            ]
-            for file_path in fallback_files:
-                if os.path.exists(file_path):
-                    book_file = file_path
-                    break
-            if not os.path.exists(book_file):
-                raise HTTPException(status_code=404, detail="Book database not found")
+        # Load book database
+        book_df = load_book_database()
 
-        book_df = pd.read_csv(book_file)
-
-        # Get basic recommendations using personality matcher
-        result = book_matcher.get_personalized_recommendations(discovery_answers, book_df, top_n=top_n*2)
-
-        # Filter by professional field with fuzzy matching
-        recommendations = []
+        # Lấy keywords cho matching dựa trên personality + field
+        personality_keywords = get_personality_keywords_for_matching(primary_group, is_synthesizer)
         field_keywords = {
             'business': ['kinh doanh', 'marketing', 'bán hàng', 'quản trị', 'tài chính', 'kế toán', 'chứng khoán', 'đầu tư', 'khởi nghiệp'],
             'humanities': ['văn học', 'lịch sử', 'triết học', 'xã hội', 'nhân văn', 'tôn giáo', 'văn hóa'],
@@ -868,47 +1051,82 @@ async def professional_and_recommend(answers: ProfessionalAnswers, top_n: int = 
             'agriculture': ['nông nghiệp', 'lâm nghiệp', 'thủy sản', 'trồng trọt', 'chăn nuôi']
         }
         
-        field_words = field_keywords.get(field, [])
+        # Kết hợp keywords từ personality và field
+        all_keywords = personality_keywords + field_keywords.get(field, [])
         
-        for _, book in result['recommendations'].iterrows():
+        # Score và filter sách
+        scored_books = []
+        for _, book in book_df.iterrows():
             cat = safe_string_value(book.get('category', '')).lower()
-            title = safe_string_value(book.get('title', '')).lower()
+            title = safe_string_value(book.get('title', '')).lower() 
             summary = safe_string_value(book.get('summary', '')).lower()
+            content = safe_string_value(book.get('content', '')).lower()
             
-            # Check if book matches professional field
-            field_match = False
-            for keyword in field_words:
-                if keyword in cat or keyword in title or keyword in summary:
-                    field_match = True
-                    break
+            # Calculate match score
+            match_score = 0.0
+            total_keywords = len(all_keywords)
             
-            if field_match:
-                recommendations.append(create_book_recommendation(book))
+            for keyword in all_keywords:
+                keyword_score = 0
+                if keyword in cat:
+                    keyword_score += 3  # Category match is most important
+                if keyword in title:
+                    keyword_score += 2  # Title match is very important
+                if keyword in summary:
+                    keyword_score += 1  # Summary match is important
+                if keyword in content:
+                    keyword_score += 0.5  # Content match is less important
+                
+                if keyword_score > 0:
+                    match_score += keyword_score / total_keywords
+            
+            # Bonus for sales volume (quantity)
+            quantity = float(book.get('quantity', 0)) if pd.notna(book.get('quantity')) else 0
+            sales_boost = min(quantity / 10000, 1.0) * 0.2  # Max 20% boost for high sales
+            
+            final_score = match_score + sales_boost
+            
+            if final_score > 0.05:  # Threshold for inclusion
+                scored_books.append((book, final_score))
         
-        # If still not enough matches, add general recommendations
-        if len(recommendations) < top_n // 2:
-            for _, book in result['recommendations'].iterrows():
-                if len(recommendations) >= top_n:
-                    break
-                book_rec = create_book_recommendation(book)
-                if book_rec not in recommendations:
-                    recommendations.append(book_rec)
+        # Sort by score (descending) and sales volume (descending)
+        scored_books.sort(key=lambda x: (x[1], float(x[0].get('quantity', 0)) if pd.notna(x[0].get('quantity')) else 0), reverse=True)
+        
+        # Take top_n recommendations
+        recommendations = []
+        match_distribution = {}
+        
+        for book, score in scored_books[:top_n]:
+            book_rec = create_book_recommendation(book)
+            book_rec.personality_match_score = score
+            recommendations.append(book_rec)
+            
+            # Track distribution
+            category = safe_string_value(book.get('category', 'Unknown'))
+            match_distribution[category] = match_distribution.get(category, 0) + 1
 
-        return {
-            'professional_analysis': {
-                'field': field,
-                'motivation': motivation,
-                'learning_style': style,
-                'presentation_preference': presentation,
-                'professional_synthesizer_indicators': synthesizer_indicators,
-                'is_professional_synthesizer': synthesizer_indicators >= 2,
-                'field_description': get_field_description(field),
-                'learning_recommendations': get_learning_recommendations(motivation, style, presentation)
-            },
-            'recommendations': recommendations,
-            'total_matches': len(recommendations),
-            'top_n_requested': top_n
-        }
+        # Tạo profile response
+        description = get_personality_description(primary_group, is_synthesizer)
+        profile_response = PersonalityProfile(
+            primary_group=profile['primary_group'],
+            secondary_group=profile['secondary_group'],
+            primary_score=profile['primary_score'],
+            secondary_score=profile['secondary_score'],
+            synthesizer_score=profile['synthesizer_score'],
+            is_synthesizer=profile['is_synthesizer'],
+            profile_name=profile['profile_name'],
+            english_name=profile['english_name'],
+            all_scores=profile['all_scores'],
+            is_multi_motivated=profile['is_multi_motivated'],
+            description=description
+        )
+
+        return RecommendationResult(
+            profile=profile_response,
+            recommendations=recommendations,
+            total_matches=len(scored_books),
+            match_distribution=match_distribution
+        )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error in professional and recommend: {str(e)}")
