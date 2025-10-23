@@ -128,7 +128,7 @@ class CaelioBookMatcher:
     
     def map_personality_to_books(self, profile, book_df):
         """
-        Lọc sách phù hợp dựa trên personality profile
+        Lọc sách phù hợp dựa trên personality profile với fuzzy matching
         """
         primary_group = profile['primary_group']
         is_synthesizer = profile['is_synthesizer']
@@ -142,14 +142,30 @@ class CaelioBookMatcher:
         else:
             target_categories = self.personality_to_categories[primary_group]['base']
         
-        # Lọc sách theo categories
-        matched_books = book_df[
-            book_df['category'].isin(target_categories)
-        ].copy()
+        # Sử dụng fuzzy matching thay vì exact match
+        def matches_any_target(actual_category):
+            if pd.isna(actual_category):
+                return False
+            actual_lower = str(actual_category).lower()
+            for target in target_categories:
+                target_lower = target.lower()
+                # Exact match
+                if actual_lower == target_lower:
+                    return True
+                # Substring match (cả 2 chiều)
+                if target_lower in actual_lower or actual_lower in target_lower:
+                    return True
+                # Keyword matching cho một số cases đặc biệt
+                if self._keyword_match(actual_lower, target_lower):
+                    return True
+            return False
+        
+        # Lọc sách theo categories với fuzzy matching
+        matched_books = book_df[book_df['category'].apply(matches_any_target)].copy()
         
         # Thêm matching score
         matched_books['personality_match_score'] = matched_books['category'].apply(
-            lambda cat: self._calculate_match_score(cat, primary_group, is_synthesizer)
+            lambda cat: self._calculate_match_score_fuzzy(cat, primary_group, is_synthesizer, target_categories)
         )
         
         # Sắp xếp theo độ phù hợp
@@ -157,19 +173,72 @@ class CaelioBookMatcher:
         
         return matched_books
     
-    def _calculate_match_score(self, category, primary_group, is_synthesizer):
-        """Tính điểm phù hợp cho category"""
+    def _keyword_match(self, actual_lower, target_lower):
+        """Kiểm tra keyword matching cho các cases đặc biệt"""
+        # Mapping keywords cho một số categories phổ biến
+        keyword_maps = {
+            'tâm lý': ['psychology', 'tâm lí', 'tâm thần', 'mental'],
+            'kinh doanh': ['business', 'bán hàng', 'marketing', 'quản trị', 'startup'],
+            'khoa học': ['science', 'kỹ thuật', 'công nghệ', 'technology'],
+            'văn học': ['literature', 'tiểu thuyết', 'truyện', 'tác phẩm'],
+            'nghệ thuật': ['art', 'hội họa', 'thiết kế', 'design'],
+            'du lịch': ['travel', 'du ký', 'phiêu lưu'],
+            'sức khỏe': ['health', 'y học', 'medical', 'làm đẹp'],
+            'tài chính': ['finance', 'tiền tệ', 'đầu tư', 'investment', 'chứng khoán']
+        }
+        
+        for key_target, related_words in keyword_maps.items():
+            if key_target in target_lower:
+                for word in related_words:
+                    if word in actual_lower:
+                        return True
+        return False
+
+    def _calculate_match_score_fuzzy(self, category, primary_group, is_synthesizer, target_categories):
+        """Tính điểm phù hợp cho category với fuzzy matching"""
+        if pd.isna(category):
+            return 0.1
+            
+        actual_lower = str(category).lower()
         base_categories = self.personality_to_categories[primary_group]['base']
         synth_categories = self.personality_to_categories[primary_group]['synthesizer']
         
-        if category in synth_categories and is_synthesizer:
-            return 1.0  # Perfect match cho Synthesizer
-        elif category in base_categories:
-            return 0.8  # Good match cho base
-        elif category in synth_categories:
-            return 0.6  # OK match cho Synthesizer categories nhưng không phải Synthesizer
-        else:
-            return 0.2  # Low match
+        max_score = 0.1  # Default low score
+        
+        # Kiểm tra exact match trước
+        for target in target_categories:
+            target_lower = target.lower()
+            if actual_lower == target_lower:
+                if target in synth_categories and is_synthesizer:
+                    return 1.0  # Perfect match cho Synthesizer
+                elif target in base_categories:
+                    return 0.9  # Near perfect cho base exact match
+                else:
+                    max_score = max(max_score, 0.8)
+        
+        # Kiểm tra substring match
+        for target in target_categories:
+            target_lower = target.lower()
+            if target_lower in actual_lower or actual_lower in target_lower:
+                if target in synth_categories and is_synthesizer:
+                    max_score = max(max_score, 0.8)  # Good match cho Synthesizer substring
+                elif target in base_categories:
+                    max_score = max(max_score, 0.7)  # Good match cho base substring
+                else:
+                    max_score = max(max_score, 0.6)
+        
+        # Kiểm tra keyword match
+        for target in target_categories:
+            target_lower = target.lower()
+            if self._keyword_match(actual_lower, target_lower):
+                if target in synth_categories and is_synthesizer:
+                    max_score = max(max_score, 0.6)  # OK match cho Synthesizer keywords
+                elif target in base_categories:
+                    max_score = max(max_score, 0.5)  # OK match cho base keywords
+                else:
+                    max_score = max(max_score, 0.4)
+        
+        return max_score
     
     def get_personalized_recommendations(self, answers, book_df, top_n=20):
         """
