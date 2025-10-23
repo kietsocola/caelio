@@ -144,6 +144,48 @@ class QuestionData(BaseModel):
     question: str
     choices: Dict[str, Dict[str, Any]]  # Sử dụng Any thay vì str để hỗ trợ cả bool và str
 
+class BookDetail(BaseModel):
+    """Model cho thông tin chi tiết sách"""
+    product_id: Any
+    title: str
+    authors: Optional[str]
+    original_price: Optional[float]
+    current_price: Optional[float]
+    quantity: Optional[float]
+    category: str
+    n_review: Optional[int]
+    avg_rating: Optional[float]
+    pages: Optional[int]
+    manufacturer: Optional[str]
+    cover_link: Optional[str]
+    summary: Optional[str]
+    content: Optional[str]
+
+class BookListItem(BaseModel):
+    """Model cho item trong danh sách sách (không có content đầy đủ)"""
+    product_id: Any
+    title: str
+    authors: Optional[str]
+    original_price: Optional[float]
+    current_price: Optional[float]
+    category: str
+    n_review: Optional[int]
+    avg_rating: Optional[float]
+    pages: Optional[int]
+    manufacturer: Optional[str]
+    cover_link: Optional[str]
+    summary: Optional[str]
+
+class BookListResponse(BaseModel):
+    """Model cho response danh sách sách"""
+    books: List[BookListItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
 # === HELPER FUNCTIONS ===
 
 def safe_string_value(value, default=''):
@@ -230,6 +272,62 @@ def get_professional_book_suggestions(field: str, motivation: str, style: str, p
         suggestions.extend(['Sách đổi mới', 'Sách phản biện'])
     
     return list(set(suggestions))  # Loại bỏ duplicate
+
+def create_book_list_item(book_row) -> BookListItem:
+    """Create BookListItem object with safe string handling (without content)"""
+    return BookListItem(
+        product_id=safe_string_value(book_row.get('product_id', '')),
+        title=safe_string_value(book_row.get('title', '')),
+        authors=safe_string_value(book_row.get('authors', '')),
+        original_price=float(book_row.get('original_price', 0)) if pd.notna(book_row.get('original_price')) else None,
+        current_price=float(book_row.get('current_price', 0)) if pd.notna(book_row.get('current_price')) else None,
+        category=safe_string_value(book_row.get('category', '')),
+        n_review=int(book_row.get('n_review', 0)) if pd.notna(book_row.get('n_review')) else None,
+        avg_rating=float(book_row.get('avg_rating', 0)) if pd.notna(book_row.get('avg_rating')) else None,
+        pages=int(book_row.get('pages', 0)) if pd.notna(book_row.get('pages')) else None,
+        manufacturer=safe_string_value(book_row.get('manufacturer', '')),
+        cover_link=safe_string_value(book_row.get('cover_link', '')),
+        summary=safe_string_value(book_row.get('summary', ''))
+    )
+
+def create_book_detail(book_row) -> BookDetail:
+    """Create BookDetail object with safe string handling (with full content)"""
+    return BookDetail(
+        product_id=safe_string_value(book_row.get('product_id', '')),
+        title=safe_string_value(book_row.get('title', '')),
+        authors=safe_string_value(book_row.get('authors', '')),
+        original_price=float(book_row.get('original_price', 0)) if pd.notna(book_row.get('original_price')) else None,
+        current_price=float(book_row.get('current_price', 0)) if pd.notna(book_row.get('current_price')) else None,
+        quantity=float(book_row.get('quantity', 0)) if pd.notna(book_row.get('quantity')) else None,
+        category=safe_string_value(book_row.get('category', '')),
+        n_review=int(book_row.get('n_review', 0)) if pd.notna(book_row.get('n_review')) else None,
+        avg_rating=float(book_row.get('avg_rating', 0)) if pd.notna(book_row.get('avg_rating')) else None,
+        pages=int(book_row.get('pages', 0)) if pd.notna(book_row.get('pages')) else None,
+        manufacturer=safe_string_value(book_row.get('manufacturer', '')),
+        cover_link=safe_string_value(book_row.get('cover_link', '')),
+        summary=safe_string_value(book_row.get('summary', '')),
+        content=safe_string_value(book_row.get('content', ''))
+    )
+
+def load_book_database():
+    """Load book database with fallback options"""
+    book_file = 'dataset/books_full_data.csv'
+    if not os.path.exists(book_file):
+        fallback_files = [
+            'books_full_data.csv',
+            '../dataset/books_full_data.csv',
+            'v2/labeled_books_v2.csv'
+        ]
+        
+        for file_path in fallback_files:
+            if os.path.exists(file_path):
+                book_file = file_path
+                break
+        
+        if not os.path.exists(book_file):
+            raise HTTPException(status_code=404, detail="Book database not found")
+    
+    return pd.read_csv(book_file)
 
 
 def ensure_complete_discovery_answers(answers: Dict[str, str]) -> Dict[str, str]:
@@ -814,6 +912,111 @@ async def professional_and_recommend(answers: ProfessionalAnswers, top_n: int = 
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error in professional and recommend: {str(e)}")
+
+@app.get("/books", response_model=BookListResponse)
+async def get_books(
+    page: int = 1,
+    page_size: int = 20,
+    category: Optional[str] = None,
+    author: Optional[str] = None,
+    title: Optional[str] = None
+):
+    """Lấy danh sách sách với phân trang và lọc
+    
+    Args:
+        page: Số trang (bắt đầu từ 1)
+        page_size: Số sách mỗi trang (tối đa 100)
+        category: Lọc theo category (tìm kiếm tương đối)
+        author: Lọc theo tác giả (tìm kiếm tương đối)
+        title: Lọc theo tiêu đề (tìm kiếm tương đối)
+    """
+    try:
+        # Validate parameters
+        if page < 1:
+            raise HTTPException(status_code=400, detail="Page must be >= 1")
+        if page_size < 1 or page_size > 100:
+            raise HTTPException(status_code=400, detail="Page size must be between 1 and 100")
+        
+        # Load book database
+        book_df = load_book_database()
+        
+        # Apply filters
+        filtered_df = book_df.copy()
+        
+        if category:
+            category_lower = category.lower()
+            filtered_df = filtered_df[
+                filtered_df['category'].str.lower().str.contains(category_lower, na=False, regex=False)
+            ]
+        
+        if author:
+            author_lower = author.lower()
+            filtered_df = filtered_df[
+                filtered_df['authors'].str.lower().str.contains(author_lower, na=False, regex=False)
+            ]
+        
+        if title:
+            title_lower = title.lower()
+            filtered_df = filtered_df[
+                filtered_df['title'].str.lower().str.contains(title_lower, na=False, regex=False)
+            ]
+        
+        # Calculate pagination
+        total = len(filtered_df)
+        total_pages = (total + page_size - 1) // page_size  # Ceiling division
+        
+        # Get paginated results
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        paginated_df = filtered_df.iloc[start_idx:end_idx]
+        
+        # Convert to BookListItem objects
+        books = []
+        for _, book_row in paginated_df.iterrows():
+            books.append(create_book_list_item(book_row))
+        
+        return BookListResponse(
+            books=books,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+            has_next=page < total_pages,
+            has_prev=page > 1
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting books: {str(e)}")
+
+@app.get("/books/{product_id}", response_model=BookDetail)
+async def get_book_detail(product_id: str):
+    """Lấy thông tin chi tiết của một cuốn sách
+    
+    Args:
+        product_id: ID sản phẩm của cuốn sách
+    """
+    try:
+        # Load book database
+        book_df = load_book_database()
+        
+        # Find book by product_id
+        # Convert product_id to string for comparison since it might be stored as different types
+        book_matches = book_df[book_df['product_id'].astype(str) == str(product_id)]
+        
+        if len(book_matches) == 0:
+            raise HTTPException(status_code=404, detail=f"Book with product_id '{product_id}' not found")
+        
+        # Get the first match (should be unique)
+        book_row = book_matches.iloc[0]
+        
+        # Convert to BookDetail object
+        return create_book_detail(book_row)
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting book detail: {str(e)}")
 
 @app.get("/groups")
 async def get_personality_groups():
