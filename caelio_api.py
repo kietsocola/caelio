@@ -144,6 +144,15 @@ class QuestionData(BaseModel):
     question: str
     choices: Dict[str, Dict[str, Any]]  # Sử dụng Any thay vì str để hỗ trợ cả bool và str
 
+class Comment(BaseModel):
+    """Model cho bình luận sách"""
+    comment_id: Any
+    title: str
+    customer_id: Any
+    rating: int
+    content: str
+    thank_count: Optional[int] = 0
+
 class BookDetail(BaseModel):
     """Model cho thông tin chi tiết sách"""
     product_id: Any
@@ -160,6 +169,7 @@ class BookDetail(BaseModel):
     cover_link: Optional[str]
     summary: Optional[str]
     content: Optional[str]
+    comments: List[Comment] = []
 
 class BookListItem(BaseModel):
     """Model cho item trong danh sách sách (không có content đầy đủ)"""
@@ -417,10 +427,63 @@ def create_book_list_item(book_row) -> BookListItem:
         summary=safe_string_value(book_row.get('summary', ''))
     )
 
+def load_comments_database():
+    """Load comments database with fallback options"""
+    comments_file = 'dataset/comments.csv'
+    if not os.path.exists(comments_file):
+        fallback_files = [
+            'comments.csv',
+            '../dataset/comments.csv',
+            'data/comment_eda.csv'
+        ]
+        
+        for file_path in fallback_files:
+            if os.path.exists(file_path):
+                comments_file = file_path
+                break
+        
+        if not os.path.exists(comments_file):
+            return pd.DataFrame()  # Return empty DataFrame if no comments file found
+    
+    return pd.read_csv(comments_file)
+
+def get_book_comments(product_id: str, limit: int = 5) -> List[Comment]:
+    """Get first 5 unique comments for a book"""
+    try:
+        comments_df = load_comments_database()
+        
+        if comments_df.empty:
+            return []
+        
+        # Filter comments for this product_id
+        book_comments = comments_df[comments_df['product_id'].astype(str) == str(product_id)]
+        
+        # Remove duplicates by comment_id and take first 5
+        unique_comments = book_comments.drop_duplicates(subset=['comment_id']).head(limit)
+        
+        comments = []
+        for _, comment_row in unique_comments.iterrows():
+            comment = Comment(
+                comment_id=safe_string_value(comment_row.get('comment_id', '')),
+                title=safe_string_value(comment_row.get('title', '')),
+                customer_id=safe_string_value(comment_row.get('customer_id', '')),
+                rating=int(comment_row.get('rating', 0)) if pd.notna(comment_row.get('rating')) else 0,
+                content=safe_string_value(comment_row.get('content', '')),
+                thank_count=int(comment_row.get('thank_count', 0)) if pd.notna(comment_row.get('thank_count')) else 0
+            )
+            comments.append(comment)
+        
+        return comments
+    except Exception as e:
+        print(f"Error loading comments: {e}")
+        return []
+
 def create_book_detail(book_row) -> BookDetail:
-    """Create BookDetail object with safe string handling (with full content)"""
+    """Create BookDetail object with safe string handling (with full content and comments)"""
+    product_id = safe_string_value(book_row.get('product_id', ''))
+    
     return BookDetail(
-        product_id=safe_string_value(book_row.get('product_id', '')),
+        product_id=product_id,
         title=safe_string_value(book_row.get('title', '')),
         authors=safe_string_value(book_row.get('authors', '')),
         original_price=float(book_row.get('original_price', 0)) if pd.notna(book_row.get('original_price')) else None,
@@ -433,7 +496,8 @@ def create_book_detail(book_row) -> BookDetail:
         manufacturer=safe_string_value(book_row.get('manufacturer', '')),
         cover_link=safe_string_value(book_row.get('cover_link', '')),
         summary=safe_string_value(book_row.get('summary', '')),
-        content=' '.join(safe_string_value(book_row.get('content', '')).split()[:100])
+        content=' '.join(safe_string_value(book_row.get('content', '')).split()[:100]),
+        comments=get_book_comments(product_id)
     )
 
 def load_book_database():
