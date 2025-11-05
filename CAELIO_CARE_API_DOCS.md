@@ -1,0 +1,610 @@
+# Caelio Care API Documentation for Frontend Team
+
+## Base URL
+```
+http://localhost:8000/care
+```
+
+## Authentication
+Sử dụng JWT Bearer token trong header:
+```
+Authorization: Bearer {access_token}
+```
+
+---
+
+## 📋 Table of Contents
+1. [Authentication APIs](#authentication-apis)
+2. [Emotional Assessment APIs](#emotional-assessment-apis)
+3. [White Books APIs](#white-books-apis)
+4. [Writing Prompts APIs](#writing-prompts-apis)
+5. [Statistics APIs](#statistics-apis)
+6. [Error Handling](#error-handling)
+
+---
+
+## 🔐 Authentication APIs
+
+### 1. Register User
+**Endpoint:** `POST /care/auth/register`
+
+**Request:**
+```json
+{
+  "email": "user@example.com",
+  "username": "testuser",
+  "password": "password123",
+  "full_name": "Test User" // optional
+}
+```
+
+**Response (200):**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user": {
+    "user_id": 1,
+    "email": "user@example.com",
+    "username": "testuser",
+    "full_name": "Test User",
+    "created_at": "2025-11-04T10:30:00",
+    "is_active": true
+  }
+}
+```
+
+**Errors:**
+- `400`: Email already registered / Username already taken
+- `500`: Registration failed
+
+### 2. Login User
+**Endpoint:** `POST /care/auth/login`
+
+**Request:**
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+**Response (200):**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user": {
+    "user_id": 1,
+    "email": "user@example.com",
+    "username": "testuser",
+    "full_name": "Test User",
+    "created_at": "2025-11-04T10:30:00",
+    "is_active": true
+  }
+}
+```
+
+**Errors:**
+- `401`: Incorrect email or password
+
+### 3. Get Current User
+**Endpoint:** `GET /care/auth/me`
+
+**Headers:** `Authorization: Bearer {token}`
+
+**Response (200):**
+```json
+{
+  "user_id": 1,
+  "email": "user@example.com",
+  "username": "testuser",
+  "full_name": "Test User",
+  "created_at": "2025-11-04T10:30:00",
+  "is_active": true
+}
+```
+
+**Errors:**
+- `401`: Invalid authentication credentials
+- `404`: User not found
+
+---
+
+## 🧠 Emotional Assessment APIs
+
+### 1. Get Emotional Questions
+**Endpoint:** `GET /care/emotional-test/questions`
+
+**Response (200):**
+```json
+{
+  "questions": {
+    "Q1": {
+      "question": "Gần đây tôi thường cảm thấy biết ơn, nhẹ nhõm hoặc tìm thấy niềm vui trong những điều nhỏ bé.",
+      "group": "PERMA",
+      "component": "Positive Emotion",
+      "layer": "Hồi phục / Tái sinh",
+      "why": "Đọc để nuôi dưỡng cảm xúc tích cực, tìm lại niềm vui giản đơn trong cuộc sống.",
+      "how": "Đọc chậm, văn chương hoặc thơ mang năng lượng bình an."
+    },
+    // ... Q2 to Q9
+  },
+  "scale": "1-5 (1 = Hoàn toàn không đồng ý, 5 = Hoàn toàn đồng ý)",
+  "description": "Bộ câu hỏi đánh giá cảm xúc dựa trên mô hình PERMA-DASS"
+}
+```
+
+### 2. Analyze Emotional Test
+**Endpoint:** `POST /care/emotional-test/analyze`
+
+**Headers:** `Authorization: Bearer {token}` (optional, nếu không login vẫn làm test được nhưng không lưu, còn login thì lưu kết quả)
+
+**Query Parameters:**
+- `archetype` (optional): string - Personality archetype from main API (e.g., "Tri thức", "Kết nối")
+
+**Request:**
+```json
+{
+  "Q1": 4,
+  "Q2": 3,
+  "Q3": 3,
+  "Q4": 4,
+  "Q5": 3,
+  "Q6": 2,
+  "Q7": 3,
+  "Q8": 2,
+  "Q9": 1
+}
+```
+
+**Response (200):**
+```json
+{
+  "perma_score": 3.4,
+  "dass_score": 2.0,
+  "mbi_score": 1.4,
+  "emotional_layer": "Hồi phục",
+  "layer_description": "Tái kết nối năng lượng và tìm lại nhịp sống.",
+  "reading_goal": "Tái kết nối năng lượng và tìm lại nhịp sống.",
+  "archetype_influence": "Tri thức"
+}
+```
+
+**Errors:**
+- `400`: Answer for {Q_id} must be between 1 and 5
+- `401`: Authentication required
+- `500`: Error analyzing emotional test
+
+### 3. Get Book Prescription
+**Endpoint:** `GET /care/emotional-test/prescription/{emotional_layer}`
+
+**Path Parameters:**
+- `emotional_layer`: string - One of: "Nhận diện", "Chấp nhận", "Hồi phục", "Tái sinh"
+
+**Query Parameters:**
+- `archetype` (optional): string - Personality archetype for customization
+
+**Response (200):**
+```json
+{
+  "emotional_layer": "Hồi phục",
+  "goal": "Tái kết nối năng lượng và tìm lại nhịp sống.",
+  "recommended_books": [
+    "Ikigai (Héctor García)",
+    "Sức mạnh của sự tĩnh lặng (Eckhart Tolle)",
+    "Stillness is the Key (Ryan Holiday)",
+    // Additional books based on archetype
+  ],
+  "recommended_movies": [
+    "Eat Pray Love",
+    "Soul (Pixar)"
+  ],
+  "writing_prompts": [
+    "Hôm nay bạn biết ơn điều gì?",
+    "Bạn đã làm điều nhỏ nào khiến bản thân thấy dễ chịu hơn?"
+  ]
+}
+```
+
+### 4. Get My Emotional Results
+**Endpoint:** `GET /care/emotional-test/my-results`
+
+**Headers:** `Authorization: Bearer {token}`
+
+**Response (200):**
+```json
+[
+  {
+    "result_id": 1,
+    "user_id": 1,
+    "answers": {
+      "Q1": 4,
+      "Q2": 3,
+      // ... Q3 to Q9
+    },
+    "perma_score": 3.4,
+    "dass_score": 2.0,
+    "mbi_score": 1.4,
+    "emotional_layer": "Hồi phục",
+    "archetype": "Tri thức",
+    "created_at": "2025-11-04T10:30:00"
+  }
+  // ... up to 10 most recent results
+]
+```
+
+---
+
+## 📚 White Books APIs
+
+### 1. Create White Book
+**Endpoint:** `POST /care/white-books/create`
+
+**Headers:** `Authorization: Bearer {token}`
+
+**Request:**
+```json
+{
+  "title": "Hành trình tìm lại chính mình",
+  "category": "Tự truyện", // optional
+  "content": "Đây là câu chuyện về hành trình khám phá bản thân...",
+  "emotional_layer": "Hồi phục", // optional
+  "prompt_used": "Hôm nay bạn biết ơn điều gì?", // optional
+  "tags": ["tự truyện", "hồi phục", "biết ơn"] // optional
+}
+```
+
+**Response (200):**
+```json
+{
+  "book_id": 1,
+  "author_id": 1,
+  "author_username": null,
+  "title": "Hành trình tìm lại chính mình",
+  "category": "Tự truyện",
+  "content": "Đây là câu chuyện về hành trình khám phá bản thân...",
+  "emotional_layer": "Hồi phục",
+  "prompt_used": "Hôm nay bạn biết ơn điều gì?",
+  "tags": ["tự truyện", "hồi phục", "biết ơn"],
+  "is_published": false,
+  "created_at": "2025-11-04T10:30:00",
+  "updated_at": "2025-11-04T10:30:00",
+  "views": 0,
+  "likes": 0
+}
+```
+
+### 2. Get My White Books
+**Endpoint:** `GET /care/white-books/my-books`
+
+**Headers:** `Authorization: Bearer {token}`
+
+**Response (200):**
+```json
+[
+  {
+    "book_id": 1,
+    "author_id": 1,
+    "title": "Hành trình tìm lại chính mình",
+    "category": "Tự truyện",
+    "content": "Full content...",
+    "emotional_layer": "Hồi phục",
+    "prompt_used": "Hôm nay bạn biết ơn điều gì?",
+    "tags": ["tự truyện", "hồi phục"],
+    "is_published": false,
+    "created_at": "2025-11-04T10:30:00",
+    "updated_at": "2025-11-04T10:30:00",
+    "views": 0,
+    "likes": 0
+  }
+  // ... all user's books
+]
+```
+
+### 3. Publish White Book
+**Endpoint:** `PUT /care/white-books/{book_id}/publish`
+
+**Headers:** `Authorization: Bearer {token}`
+
+**Path Parameters:**
+- `book_id`: integer - ID of the book to publish
+
+**Response (200):**
+```json
+{
+  "message": "Book published successfully"
+}
+```
+
+**Errors:**
+- `404`: Book not found or not authorized
+- `401`: Authentication required
+
+### 4. Get Published White Books
+**Endpoint:** `GET /care/white-books/published`
+
+**Query Parameters:**
+- `emotional_layer` (optional): string - Filter by emotional layer
+- `page` (optional): integer - Page number (default: 1)
+- `page_size` (optional): integer - Items per page (default: 20)
+
+**Response (200):**
+```json
+[
+  {
+    "book_id": 1,
+    "author_id": 1,
+    "author_username": "testuser",
+    "title": "Hành trình tìm lại chính mình",
+    "category": "Tự truyện",
+    "content": "Đây là câu chuyện về hành trình...",
+    "emotional_layer": "Hồi phục",
+    "prompt_used": "Hôm nay bạn biết ơn điều gì?",
+    "tags": ["tự truyện", "hồi phục"],
+    "is_published": true,
+    "created_at": "2025-11-04T10:30:00",
+    "updated_at": "2025-11-04T10:30:00",
+    "views": 15,
+    "likes": 3
+  }
+  // ... more published books
+]
+```
+
+### 5. Get White Book Detail
+**Endpoint:** `GET /care/white-books/{book_id}`
+
+**Path Parameters:**
+- `book_id`: integer - ID of the book
+
+**Response (200):**
+```json
+{
+  "book_id": 1,
+  "author_id": 1,
+  "author_username": "testuser",
+  "title": "Hành trình tìm lại chính mình",
+  "category": "Tự truyện",
+  "content": "Full content of the book...",
+  "emotional_layer": "Hồi phục",
+  "prompt_used": "Hôm nay bạn biết ơn điều gì?",
+  "tags": ["tự truyện", "hồi phục"],
+  "is_published": true,
+  "created_at": "2025-11-04T10:30:00",
+  "updated_at": "2025-11-04T10:30:00",
+  "views": 16, // Incremented after view
+  "likes": 3
+}
+```
+
+**Errors:**
+- `404`: Book not found
+
+### 6. Search White Books
+**Endpoint:** `GET /care/white-books/search/{query}`
+
+**Path Parameters:**
+- `query`: string - Search query
+
+**Query Parameters:**
+- `limit` (optional): integer - Max results (default: 20)
+
+**Response (200):**
+```json
+[
+  {
+    "book_id": 1,
+    "author_id": 1,
+    "author_username": "testuser",
+    "title": "Hành trình tìm lại chính mình",
+    "category": "Tự truyện",
+    "content": "Truncated content preview...", // Max 500 chars
+    "emotional_layer": "Hồi phục",
+    "prompt_used": "Hôm nay bạn biết ơn điều gì?",
+    "tags": ["tự truyện", "hồi phục"],
+    "is_published": true,
+    "created_at": "2025-11-04T10:30:00",
+    "updated_at": "2025-11-04T10:30:00",
+    "views": 15,
+    "likes": 3
+  }
+  // ... search results
+]
+```
+
+---
+
+## ✍️ Writing Prompts APIs
+
+### 1. Get Writing Prompts
+**Endpoint:** `GET /care/writing-prompts/{emotional_layer}`
+
+**Path Parameters:**
+- `emotional_layer`: string - One of: "Nhận diện", "Chấp nhận", "Hồi phục", "Tái sinh"
+
+**Response (200):**
+```json
+{
+  "emotional_layer": "Hồi phục",
+  "prompts": [
+    "Hôm nay bạn biết ơn điều gì?",
+    "Bạn đã làm điều nhỏ nào khiến bản thân thấy dễ chịu hơn?"
+  ]
+}
+```
+
+---
+
+## 📊 Statistics APIs
+
+### 1. Get System Stats
+**Endpoint:** `GET /care/stats`
+
+**Response (200):**
+```json
+{
+  "users": 150,
+  "emotional_tests": 423,
+  "white_books": {
+    "total": 89,
+    "published": 67
+  },
+  "emotional_layers": [
+    {
+      "emotional_layer": "Hồi phục",
+      "count": 156
+    },
+    {
+      "emotional_layer": "Tái sinh", 
+      "count": 98
+    },
+    {
+      "emotional_layer": "Chấp nhận",
+      "count": 87
+    },
+    {
+      "emotional_layer": "Nhận diện",
+      "count": 82
+    }
+  ],
+  "available_layers": [
+    "Nhận diện",
+    "Chấp nhận", 
+    "Hồi phục",
+    "Tái sinh"
+  ]
+}
+```
+
+---
+
+## 🚨 Error Handling
+
+### Common Error Response Format:
+```json
+{
+  "detail": "Error message description"
+}
+```
+
+### HTTP Status Codes:
+- `200`: Success
+- `400`: Bad Request (validation error)
+- `401`: Unauthorized (authentication required/invalid)
+- `403`: Forbidden (not authorized for this action)
+- `404`: Not Found (resource doesn't exist)
+- `500`: Internal Server Error
+
+### Authentication Errors:
+```json
+{
+  "detail": "Invalid authentication credentials",
+  "headers": {
+    "WWW-Authenticate": "Bearer"
+  }
+}
+```
+
+---
+
+## 🔄 Typical User Flow
+
+### 1. User Registration & Assessment:
+```javascript
+// 1. Register
+const registerResponse = await fetch('/care/auth/register', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    email: 'user@example.com',
+    username: 'user123',
+    password: 'password123'
+  })
+});
+const { access_token } = await registerResponse.json();
+
+// 2. Get questions
+const questionsResponse = await fetch('/care/emotional-test/questions');
+const { questions } = await questionsResponse.json();
+
+// 3. Submit assessment
+const assessmentResponse = await fetch('/care/emotional-test/analyze?archetype=Tri thức', {
+  method: 'POST',
+  headers: { 
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${access_token}`
+  },
+  body: JSON.stringify({
+    Q1: 4, Q2: 3, Q3: 3, Q4: 4, Q5: 3,
+    Q6: 2, Q7: 3, Q8: 2, Q9: 1
+  })
+});
+const profile = await assessmentResponse.json();
+
+// 4. Get prescription
+const prescriptionResponse = await fetch(`/care/emotional-test/prescription/${profile.emotional_layer}?archetype=Tri thức`);
+const prescription = await prescriptionResponse.json();
+```
+
+### 2. Content Creation:
+```javascript
+// 1. Create book
+const bookResponse = await fetch('/care/white-books/create', {
+  method: 'POST',
+  headers: { 
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${access_token}`
+  },
+  body: JSON.stringify({
+    title: 'My Journey',
+    content: 'Book content...',
+    emotional_layer: profile.emotional_layer,
+    prompt_used: prescription.writing_prompts[0]
+  })
+});
+const book = await bookResponse.json();
+
+// 2. Publish book
+await fetch(`/care/white-books/${book.book_id}/publish`, {
+  method: 'PUT',
+  headers: { 'Authorization': `Bearer ${access_token}` }
+});
+```
+
+---
+
+## 📱 Frontend Implementation Notes
+
+### 1. Authentication State Management:
+- Store JWT token securely (localStorage/sessionStorage)
+- Auto-add Authorization header to requests
+- Handle token expiration (401 errors)
+- Redirect to login on authentication failures
+
+### 2. Emotional Assessment UI:
+- 9 questions with 1-5 scale (radio buttons/slider)
+- Progress indicator (question X of 9)
+- Validation: ensure all questions answered
+- Pass archetype from personality assessment if available
+
+### 3. Results Display:
+- Show emotional layer with description
+- Display MBI score with visual indicator
+- Show book/movie recommendations in cards
+- Highlight writing prompts for content creation
+
+### 4. White Books Interface:
+- Rich text editor for content creation
+- Tag input system
+- Draft/Published status indicators
+- Community browsing with filters
+- Search functionality
+
+### 5. Error Handling:
+- Display user-friendly error messages
+- Handle network failures gracefully
+- Show loading states during API calls
+- Validation feedback for forms
+
+This documentation provides complete API specification for the frontend team to implement Caelio Care features!
