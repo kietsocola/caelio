@@ -15,17 +15,22 @@ from .database import init_database, get_db
 from .auth import AuthManager, UserCreate, UserLogin, User, Token
 from .emotional_system import EmotionalTestSystem, EmotionalAnswers, EmotionalProfile
 from .white_books import WhiteBooksManager, WhiteBookCreate, WhiteBook
+from .bookstore import (
+    BookstoreManager, BookstoreCreate, Bookstore,
+    BookLinkCreate, BookLink
+)
 
 # Global variables
 auth_manager = None
 emotional_system = EmotionalTestSystem()
 white_books_manager = None
+bookstore_manager = None
 security = HTTPBearer()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    global auth_manager, white_books_manager
+    global auth_manager, white_books_manager, bookstore_manager
     
     # Initialize database
     await init_database()
@@ -34,6 +39,7 @@ async def lifespan(app: FastAPI):
     # Initialize managers
     auth_manager = AuthManager(db_pool)
     white_books_manager = WhiteBooksManager(db_pool)
+    bookstore_manager = BookstoreManager(db_pool)
     
     print("Caelio Care API started successfully")
     yield
@@ -61,7 +67,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup"""
-    global auth_manager, white_books_manager
+    global auth_manager, white_books_manager, bookstore_manager
     
     try:
         # Initialize database
@@ -71,6 +77,11 @@ async def startup_event():
         # Initialize managers
         auth_manager = AuthManager(db_pool)
         white_books_manager = WhiteBooksManager(db_pool)
+        bookstore_manager = BookstoreManager(db_pool)
+        
+        # Import books from CSV
+        from .database import import_books_from_csv
+        await import_books_from_csv()
         
         print("✅ Caelio Care API initialized successfully")
     except Exception as e:
@@ -434,6 +445,193 @@ async def get_system_stats():
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting stats: {str(e)}")
+
+# === BOOKSTORE ENDPOINTS ===
+
+@app.post("/bookstores/register", response_model=Bookstore)
+async def register_bookstore(bookstore_data: BookstoreCreate):
+    """Register a new bookstore"""
+    global bookstore_manager
+    
+    # Ensure bookstore_manager is initialized
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        bookstore = await bookstore_manager.create_bookstore(bookstore_data)
+        return bookstore
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bookstore registration failed: {str(e)}")
+
+@app.get("/bookstores", response_model=List[Bookstore])
+async def get_all_bookstores(active_only: bool = True):
+    """Get all bookstores"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        bookstores = await bookstore_manager.get_all_bookstores(active_only)
+        return bookstores
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting bookstores: {str(e)}")
+
+@app.get("/bookstores/{bookstore_id}", response_model=Bookstore)
+async def get_bookstore(bookstore_id: int):
+    """Get bookstore details"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        bookstore = await bookstore_manager.get_bookstore_by_id(bookstore_id)
+        if not bookstore:
+            raise HTTPException(status_code=404, detail="Bookstore not found")
+        return bookstore
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting bookstore: {str(e)}")
+
+@app.post("/bookstores/book-links", response_model=BookLink)
+async def add_book_link(link_data: BookLinkCreate):
+    """Add a purchase link for a book (bookstore adds their selling link)"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        link = await bookstore_manager.add_book_link(link_data)
+        return link
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error adding book link: {str(e)}")
+
+@app.get("/bookstores/{bookstore_id}/books")
+async def get_bookstore_books(bookstore_id: int):
+    """Get all books available at a bookstore"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        books = await bookstore_manager.get_bookstore_books(bookstore_id)
+        return {"bookstore_id": bookstore_id, "books": books}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting bookstore books: {str(e)}")
+
+@app.get("/books/{book_id}/purchase-links")
+async def get_book_purchase_links(
+    book_id: int,
+    user_latitude: Optional[float] = None,
+    user_longitude: Optional[float] = None
+):
+    """
+    Get purchase links for a book, prioritized by:
+    1. Distance from user (if GPS coordinates provided)
+    2. Commission rate (higher = better)
+    """
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        links = await bookstore_manager.get_book_links(
+            book_id,
+            user_latitude,
+            user_longitude
+        )
+        
+        return {
+            "book_id": book_id,
+            "total_links": len(links),
+            "purchase_links": links,
+            "sorted_by": "distance and commission_rate" if user_latitude else "commission_rate only"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting purchase links: {str(e)}")
+
+@app.get("/books/{book_id}")
+async def get_book_info(book_id: int):
+    """Get book information by product_id"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        book = await bookstore_manager.get_book_info(book_id)
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+        return book
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting book info: {str(e)}")
+
+@app.get("/books/search/{query}")
+async def search_books(query: str, limit: int = 20):
+    """Search books by title, author, or category"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        books = await bookstore_manager.search_books(query, limit)
+        return {
+            "query": query,
+            "total": len(books),
+            "books": books
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error searching books: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

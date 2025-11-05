@@ -95,6 +95,66 @@ class Database:
                 )
             ''')
             
+            # Books table (from CSV)
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS books (
+                    product_id BIGINT PRIMARY KEY,
+                    title VARCHAR(500) NOT NULL,
+                    authors VARCHAR(500),
+                    original_price FLOAT,
+                    current_price FLOAT,
+                    quantity INTEGER,
+                    category VARCHAR(200),
+                    n_review INTEGER,
+                    avg_rating FLOAT,
+                    pages INTEGER,
+                    manufacturer VARCHAR(300),
+                    cover_link TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Bookstores table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS bookstores (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    email VARCHAR(255) UNIQUE NOT NULL,
+                    phone VARCHAR(50) NOT NULL,
+                    address TEXT NOT NULL,
+                    latitude FLOAT NOT NULL,
+                    longitude FLOAT NOT NULL,
+                    commission_rate FLOAT NOT NULL CHECK (commission_rate >= 0 AND commission_rate <= 100),
+                    description TEXT,
+                    website VARCHAR(500),
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Book purchase links table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS book_links (
+                    id SERIAL PRIMARY KEY,
+                    book_id BIGINT NOT NULL REFERENCES books(product_id) ON DELETE CASCADE,
+                    bookstore_id INTEGER REFERENCES bookstores(id) ON DELETE CASCADE,
+                    purchase_url TEXT NOT NULL,
+                    price FLOAT,
+                    stock_status VARCHAR(50) DEFAULT 'available',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(book_id, bookstore_id)
+                )
+            ''')
+            
+            # Create index for faster queries
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_book_links_book_id ON book_links(book_id)
+            ''')
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_book_links_bookstore_id ON book_links(bookstore_id)
+            ''')
+            
             print("Database tables created successfully")
 
 # Global database instance
@@ -107,3 +167,69 @@ async def init_database():
 async def get_db():
     """Get database connection"""
     return db.pool
+
+async def import_books_from_csv(csv_path: str = "dataset/book_data.csv"):
+    """Import books from CSV file into database"""
+    import pandas as pd
+    import os
+    
+    try:
+        # Read CSV
+        if not os.path.exists(csv_path):
+            print(f"CSV file not found: {csv_path}")
+            return False
+        
+        df = pd.read_csv(csv_path)
+        print(f"Found {len(df)} books in CSV")
+        
+        # Drop duplicates based on product_id (keep first occurrence)
+        df = df.drop_duplicates(subset=['product_id'], keep='first')
+        print(f"After removing duplicates: {len(df)} unique books")
+        
+        # Get database connection
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            # Check existing books
+            existing_count = await conn.fetchval('SELECT COUNT(*) FROM books')
+            print(f"Existing books in database: {existing_count}")
+            
+            if existing_count > 0:
+                print("Books already imported. Skipping import.")
+                return True
+            
+            # Insert books
+            inserted = 0
+            for _, row in df.iterrows():
+                try:
+                    await conn.execute('''
+                        INSERT INTO books (
+                            product_id, title, authors, original_price, current_price,
+                            quantity, category, n_review, avg_rating, pages,
+                            manufacturer, cover_link
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                        ON CONFLICT (product_id) DO NOTHING
+                    ''',
+                        int(row['product_id']),
+                        str(row['title']),
+                        str(row['authors']) if pd.notna(row['authors']) else None,
+                        float(row['original_price']) if pd.notna(row['original_price']) else None,
+                        float(row['current_price']) if pd.notna(row['current_price']) else None,
+                        int(row['quantity']) if pd.notna(row['quantity']) else 0,
+                        str(row['category']) if pd.notna(row['category']) else None,
+                        int(row['n_review']) if pd.notna(row['n_review']) else 0,
+                        float(row['avg_rating']) if pd.notna(row['avg_rating']) else 0.0,
+                        int(row['pages']) if pd.notna(row['pages']) else 0,
+                        str(row['manufacturer']) if pd.notna(row['manufacturer']) else None,
+                        str(row['cover_link']) if pd.notna(row['cover_link']) else None
+                    )
+                    inserted += 1
+                except Exception as e:
+                    print(f"Error inserting book {row.get('product_id', 'unknown')}: {e}")
+            
+            print(f"Successfully imported {inserted} books")
+            return True
+            
+    except Exception as e:
+        print(f"Error importing books from CSV: {e}")
+        return False

@@ -18,8 +18,10 @@ Authorization: Bearer {access_token}
 2. [Emotional Assessment APIs](#emotional-assessment-apis)
 3. [White Books APIs](#white-books-apis)
 4. [Writing Prompts APIs](#writing-prompts-apis)
-5. [Statistics APIs](#statistics-apis)
-6. [Error Handling](#error-handling)
+5. [Bookstore APIs](#bookstore-apis)
+6. [Book Purchase Links APIs](#book-purchase-links-apis)
+7. [Statistics APIs](#statistics-apis)
+8. [Error Handling](#error-handling)
 
 ---
 
@@ -606,5 +608,304 @@ await fetch(`/care/white-books/${book.book_id}/publish`, {
 - Handle network failures gracefully
 - Show loading states during API calls
 - Validation feedback for forms
+
+---
+
+## 🏪 Bookstore APIs
+
+### 1. Register Bookstore
+**Endpoint:** `POST /care/bookstores/register`
+
+**Description:** Đăng ký nhà sách mới vào hệ thống
+
+**Request:**
+```json
+{
+  "name": "Nhà sách Fahasa",
+  "email": "fahasa@example.com",
+  "phone": "0901234567",
+  "address": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+  "latitude": 10.7769,
+  "longitude": 106.7009,
+  "commission_rate": 15.5,
+  "description": "Nhà sách lớn nhất Việt Nam",
+  "website": "https://fahasa.com"
+}
+```
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "name": "Nhà sách Fahasa",
+  "email": "fahasa@example.com",
+  "phone": "0901234567",
+  "address": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+  "latitude": 10.7769,
+  "longitude": 106.7009,
+  "commission_rate": 15.5,
+  "description": "Nhà sách lớn nhất Việt Nam",
+  "website": "https://fahasa.com",
+  "is_active": true,
+  "created_at": "2024-01-15T10:30:00"
+}
+```
+
+**Error (400):**
+```json
+{
+  "detail": "Email already registered"
+}
+```
+
+---
+
+### 2. Get All Bookstores
+**Endpoint:** `GET /care/bookstores?active_only=true`
+
+**Description:** Lấy danh sách tất cả nhà sách
+
+**Query Parameters:**
+- `active_only` (boolean, optional): Chỉ lấy nhà sách đang hoạt động. Default: `true`
+
+**Response (200):**
+```json
+[
+  {
+    "id": 1,
+    "name": "Nhà sách Fahasa",
+    "email": "fahasa@example.com",
+    "phone": "0901234567",
+    "address": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+    "latitude": 10.7769,
+    "longitude": 106.7009,
+    "commission_rate": 15.5,
+    "description": "Nhà sách lớn nhất Việt Nam",
+    "website": "https://fahasa.com",
+    "is_active": true,
+    "created_at": "2024-01-15T10:30:00"
+  }
+]
+```
+
+---
+
+### 3. Get Bookstore Details
+**Endpoint:** `GET /care/bookstores/{bookstore_id}`
+
+**Description:** Lấy thông tin chi tiết của một nhà sách
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "name": "Nhà sách Fahasa",
+  "email": "fahasa@example.com",
+  "phone": "0901234567",
+  "address": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+  "latitude": 10.7769,
+  "longitude": 106.7009,
+  "commission_rate": 15.5,
+  "description": "Nhà sách lớn nhất Việt Nam",
+  "website": "https://fahasa.com",
+  "is_active": true,
+  "created_at": "2024-01-15T10:30:00"
+}
+```
+
+**Error (404):**
+```json
+{
+  "detail": "Bookstore not found"
+}
+```
+
+---
+
+### 4. Get Bookstore Books
+**Endpoint:** `GET /care/bookstores/{bookstore_id}/books`
+
+**Description:** Lấy danh sách sách có sẵn tại nhà sách
+
+**Response (200):**
+```json
+{
+  "bookstore_id": 1,
+  "books": [
+    {
+      "id": 1,
+      "book_id": 123,
+      "bookstore_id": 1,
+      "purchase_url": "https://fahasa.com/book/123",
+      "price": 150000,
+      "stock_status": "available",
+      "created_at": "2024-01-15T10:30:00"
+    }
+  ]
+}
+```
+
+---
+
+## 📚 Book Purchase Links APIs
+
+### 1. Add Book Purchase Link
+**Endpoint:** `POST /care/bookstores/book-links`
+
+**Description:** Nhà sách thêm link bán sách của mình
+
+**Request:**
+```json
+{
+  "book_id": 123,
+  "bookstore_id": 1,
+  "purchase_url": "https://fahasa.com/book/123",
+  "price": 150000,
+  "stock_status": "available"
+}
+```
+
+**Notes:**
+- `stock_status` có thể là: `"available"`, `"out_of_stock"`, `"pre_order"`
+- Nếu link đã tồn tại, sẽ cập nhật thông tin
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "book_id": 123,
+  "bookstore_id": 1,
+  "purchase_url": "https://fahasa.com/book/123",
+  "price": 150000,
+  "stock_status": "available",
+  "created_at": "2024-01-15T10:30:00"
+}
+```
+
+---
+
+### 2. Get Book Purchase Links (PRIORITY SORTING)
+**Endpoint:** `GET /care/books/{book_id}/purchase-links?user_latitude=10.7769&user_longitude=106.7009`
+
+**Description:** Lấy danh sách link mua sách, được ưu tiên theo:
+1. Khoảng cách từ user đến nhà sách (nếu có GPS)
+2. Tỷ lệ hoa hồng (cao hơn = ưu tiên hơn)
+
+**Query Parameters:**
+- `user_latitude` (float, optional): Vĩ độ GPS của user
+- `user_longitude` (float, optional): Kinh độ GPS của user
+
+**Response (200):**
+```json
+{
+  "book_id": 123,
+  "total_links": 3,
+  "sorted_by": "distance and commission_rate",
+  "purchase_links": [
+    {
+      "id": 1,
+      "book_id": 123,
+      "purchase_url": "https://fahasa.com/book/123",
+      "price": 150000,
+      "stock_status": "available",
+      "bookstore_id": 1,
+      "bookstore_name": "Nhà sách Fahasa",
+      "bookstore_address": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+      "bookstore_latitude": 10.7769,
+      "bookstore_longitude": 106.7009,
+      "bookstore_phone": "0901234567",
+      "bookstore_website": "https://fahasa.com",
+      "commission_rate": 15.5,
+      "distance_km": 0.5
+    },
+    {
+      "id": 2,
+      "book_id": 123,
+      "purchase_url": "https://tiki.vn/book/123",
+      "price": 145000,
+      "stock_status": "available",
+      "bookstore_id": 2,
+      "bookstore_name": "Tiki",
+      "bookstore_address": "52 Út Tịch, Tân Bình, TP.HCM",
+      "bookstore_latitude": 10.8023,
+      "bookstore_longitude": 106.6504,
+      "bookstore_phone": "0909876543",
+      "bookstore_website": "https://tiki.vn",
+      "commission_rate": 12.0,
+      "distance_km": 5.2
+    }
+  ]
+}
+```
+
+**Response khi không có GPS (200):**
+```json
+{
+  "book_id": 123,
+  "total_links": 2,
+  "sorted_by": "commission_rate only",
+  "purchase_links": [
+    {
+      "id": 1,
+      "book_id": 123,
+      "purchase_url": "https://fahasa.com/book/123",
+      "price": 150000,
+      "stock_status": "available",
+      "bookstore_id": 1,
+      "bookstore_name": "Nhà sách Fahasa",
+      "bookstore_address": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+      "bookstore_latitude": 10.7769,
+      "bookstore_longitude": 106.7009,
+      "bookstore_phone": "0901234567",
+      "bookstore_website": "https://fahasa.com",
+      "commission_rate": 15.5,
+      "distance_km": null
+    }
+  ]
+}
+```
+
+**Use Cases:**
+1. **Khi user làm bài test cảm xúc**: Sau khi nhận được gợi ý sách, frontend gọi API này với `book_id` của từng sách được gợi ý
+2. **Với GPS**: Pass `user_latitude` và `user_longitude` từ HTML5 Geolocation API
+3. **Không có GPS**: Không pass GPS parameters, sẽ sort theo commission rate
+
+**Frontend Integration:**
+```javascript
+// Lấy GPS từ browser
+navigator.geolocation.getCurrentPosition(async (position) => {
+  const { latitude, longitude } = position.coords;
+  
+  // Gọi API với GPS
+  const response = await fetch(
+    `/care/books/${bookId}/purchase-links?user_latitude=${latitude}&user_longitude=${longitude}`
+  );
+  const data = await response.json();
+  
+  // Hiển thị danh sách link, đã được sort theo khoảng cách
+  displayPurchaseLinks(data.purchase_links);
+});
+```
+
+---
+
+## 📊 Integration Flow
+
+### Complete User Journey:
+
+1. **User đăng nhập** → Nhận JWT token
+2. **Làm bài test cảm xúc** → Nhận emotional profile + gợi ý sách
+3. **Xem chi tiết sách** → Gọi `/books/{book_id}/purchase-links` với GPS
+4. **Chọn nhà sách gần nhất** → Click vào link mua hàng
+5. **Mua sách** → Nhà sách nhận hoa hồng
+
+### Bookstore Journey:
+
+1. **Nhà sách đăng ký** → `POST /bookstores/register`
+2. **Thêm link bán sách** → `POST /bookstores/book-links` cho mỗi sách
+3. **User xem sách** → Nhà sách được ưu tiên theo GPS + commission
+4. **User click link** → Nhà sách nhận traffic + conversion
+
+---
 
 This documentation provides complete API specification for the frontend team to implement Caelio Care features!
