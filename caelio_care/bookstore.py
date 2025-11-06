@@ -44,6 +44,7 @@ class BookLinkCreate(BaseModel):
     bookstore_id: int
     purchase_url: str
     price: Optional[float] = None
+    stock_quantity: Optional[int] = 0
     stock_status: Optional[str] = "available"  # available, out_of_stock, pre_order
 
 
@@ -54,8 +55,59 @@ class BookLink(BaseModel):
     bookstore_id: int
     purchase_url: str
     price: Optional[float] = None
+    stock_quantity: int
+    sold_count: int
+    view_count: int
     stock_status: str
     created_at: datetime
+
+
+class OrderItemCreate(BaseModel):
+    """Schema for creating order item"""
+    book_link_id: int
+    quantity: int
+
+
+class OrderCreate(BaseModel):
+    """Schema for creating an order"""
+    items: List[OrderItemCreate]
+    shipping_name: str
+    shipping_phone: str
+    shipping_address: str
+    payment_method: str  # cash, credit_card, bank_transfer, momo, zalopay
+    notes: Optional[str] = None
+
+
+class OrderItem(BaseModel):
+    """Schema for order item"""
+    id: int
+    order_id: int
+    book_link_id: int
+    book_id: int
+    book_title: str
+    quantity: int
+    unit_price: float
+    subtotal: float
+    created_at: datetime
+
+
+class Order(BaseModel):
+    """Schema for order"""
+    id: int
+    user_id: int
+    bookstore_id: int
+    order_number: str
+    total_amount: float
+    order_status: str  # pending, confirmed, processing, shipped, delivered, cancelled
+    payment_status: str  # unpaid, paid, refunded
+    payment_method: str
+    shipping_address: str
+    shipping_phone: str
+    shipping_name: str
+    notes: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    items: Optional[List[OrderItem]] = None
 
 
 class BookstoreManager:
@@ -176,12 +228,13 @@ class BookstoreManager:
                 # Update existing link
                 row = await conn.fetchrow('''
                     UPDATE book_links
-                    SET purchase_url = $1, price = $2, stock_status = $3, updated_at = CURRENT_TIMESTAMP
-                    WHERE book_id = $4 AND bookstore_id = $5
+                    SET purchase_url = $1, price = $2, stock_quantity = $3, stock_status = $4, updated_at = CURRENT_TIMESTAMP
+                    WHERE book_id = $5 AND bookstore_id = $6
                     RETURNING *
                 ''',
                     link_data.purchase_url,
                     link_data.price,
+                    link_data.stock_quantity,
                     link_data.stock_status,
                     link_data.book_id,
                     link_data.bookstore_id
@@ -190,15 +243,16 @@ class BookstoreManager:
                 # Insert new link
                 row = await conn.fetchrow('''
                     INSERT INTO book_links (
-                        book_id, bookstore_id, purchase_url, price, stock_status
+                        book_id, bookstore_id, purchase_url, price, stock_quantity, stock_status
                     )
-                    VALUES ($1, $2, $3, $4, $5)
+                    VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING *
                 ''',
                     link_data.book_id,
                     link_data.bookstore_id,
                     link_data.purchase_url,
                     link_data.price,
+                    link_data.stock_quantity,
                     link_data.stock_status
                 )
             
@@ -345,3 +399,352 @@ class BookstoreManager:
             ''', f'%{query}%', limit)
             
             return [dict(row) for row in rows]
+    
+    async def increment_view_count(self, book_link_id: int) -> bool:
+        """Increment view count for a book link"""
+        async with self.db_pool.acquire() as conn:
+            result = await conn.execute('''
+                UPDATE book_links
+                SET view_count = view_count + 1
+                WHERE id = $1
+            ''', book_link_id)
+            return result == 'UPDATE 1'
+    
+    async def get_book_link_by_id(self, book_link_id: int) -> Optional[Dict]:
+        """Get book link by ID with full info"""
+        async with self.db_pool.acquire() as conn:
+            row = await conn.fetchrow('''
+                SELECT 
+                    bl.*,
+                    b.title,
+                    b.authors,
+                    b.cover_link,
+                    b.category,
+                    b.current_price as original_price,
+                    bs.name as bookstore_name,
+                    bs.address as bookstore_address
+                FROM book_links bl
+                LEFT JOIN books b ON bl.book_id = b.product_id
+                LEFT JOIN bookstores bs ON bl.bookstore_id = bs.id
+                WHERE bl.id = $1
+            ''', book_link_id)
+            
+            if row:
+                return dict(row)
+            return None
+    
+    async def create_order(self, user_id: int, order_data: OrderCreate) -> Order:
+        """Create a new order"""
+        import uuid
+        from datetime import datetime
+        
+        async with self.db_pool.acquire() as conn:
+            # Start transaction
+            async with conn.transaction():
+                # Get items info and calculate total
+                total_amount = 0
+                bookstore_id = None
+                items_data = []
+                
+                for item in order_data.items:
+                    # Get book link info
+                    link = await conn.fetchrow('''
+                        SELECT bl.*, b.title, bs.id as bookstore_id
+                        FROM book_links bl
+                        LEFT JOIN books b ON bl.book_id = b.product_id
+                        LEFT JOIN bookstores bs ON bl.bookstore_id = bs.id
+                        WHERE bl.id = $1
+                    ''', item.book_link_id)
+                    
+                    if not link:
+                        raise ValueError(f"Book link {item.book_link_id} not found")
+                    
+                    # Check stock
+                    if link['stock_quantity'] < item.quantity:
+                        raise ValueError(f"Insufficient stock for {link['title']}")
+                    
+                    # Set bookstore_id (all items must be from same bookstore)
+                    if bookstore_id is None:
+                        bookstore_id = link['bookstore_id']
+                    elif bookstore_id != link['bookstore_id']:
+                        raise ValueError("All items must be from the same bookstore")
+                    
+                    subtotal = link['price'] * item.quantity
+                    total_amount += subtotal
+                    
+                    items_data.append({
+                        'book_link_id': item.book_link_id,
+                        'book_id': link['book_id'],
+                        'book_title': link['title'],
+                        'quantity': item.quantity,
+                        'unit_price': link['price'],
+                        'subtotal': subtotal
+                    })
+                
+                # Generate order number
+                order_number = f"ORD{datetime.now().strftime('%Y%m%d')}{uuid.uuid4().hex[:8].upper()}"
+                
+                # Create order
+                order_row = await conn.fetchrow('''
+                    INSERT INTO orders (
+                        user_id, bookstore_id, order_number, total_amount,
+                        shipping_name, shipping_phone, shipping_address,
+                        payment_method, notes
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    RETURNING *
+                ''',
+                    user_id, bookstore_id, order_number, total_amount,
+                    order_data.shipping_name, order_data.shipping_phone,
+                    order_data.shipping_address, order_data.payment_method,
+                    order_data.notes
+                )
+                
+                order_id = order_row['id']
+                
+                # Create order items and update stock
+                order_items = []
+                for item_data in items_data:
+                    # Insert order item
+                    item_row = await conn.fetchrow('''
+                        INSERT INTO order_items (
+                            order_id, book_link_id, book_id, book_title,
+                            quantity, unit_price, subtotal
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        RETURNING *
+                    ''',
+                        order_id, item_data['book_link_id'], item_data['book_id'],
+                        item_data['book_title'], item_data['quantity'],
+                        item_data['unit_price'], item_data['subtotal']
+                    )
+                    order_items.append(OrderItem(**dict(item_row)))
+                    
+                    # Update stock and sold count
+                    await conn.execute('''
+                        UPDATE book_links
+                        SET stock_quantity = stock_quantity - $1,
+                            sold_count = sold_count + $1,
+                            stock_status = CASE 
+                                WHEN stock_quantity - $1 <= 0 THEN 'out_of_stock'
+                                ELSE stock_status
+                            END
+                        WHERE id = $2
+                    ''', item_data['quantity'], item_data['book_link_id'])
+                
+                order = Order(**dict(order_row), items=order_items)
+                return order
+    
+    async def get_order_by_id(self, order_id: int, user_id: Optional[int] = None) -> Optional[Order]:
+        """Get order by ID with items"""
+        async with self.db_pool.acquire() as conn:
+            # Get order
+            query = 'SELECT * FROM orders WHERE id = $1'
+            params = [order_id]
+            
+            if user_id is not None:
+                query += ' AND user_id = $2'
+                params.append(user_id)
+            
+            order_row = await conn.fetchrow(query, *params)
+            if not order_row:
+                return None
+            
+            # Get order items
+            items_rows = await conn.fetch('''
+                SELECT * FROM order_items WHERE order_id = $1
+            ''', order_id)
+            
+            items = [OrderItem(**dict(row)) for row in items_rows]
+            order = Order(**dict(order_row), items=items)
+            return order
+    
+    async def get_user_orders(self, user_id: int, limit: int = 20, offset: int = 0) -> List[Order]:
+        """Get user's orders"""
+        async with self.db_pool.acquire() as conn:
+            orders_rows = await conn.fetch('''
+                SELECT * FROM orders
+                WHERE user_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
+            ''', user_id, limit, offset)
+            
+            orders = []
+            for order_row in orders_rows:
+                # Get items for each order
+                items_rows = await conn.fetch('''
+                    SELECT * FROM order_items WHERE order_id = $1
+                ''', order_row['id'])
+                
+                items = [OrderItem(**dict(row)) for row in items_rows]
+                order = Order(**dict(order_row), items=items)
+                orders.append(order)
+            
+            return orders
+    
+    async def get_bookstore_orders(self, bookstore_id: int, limit: int = 50, offset: int = 0) -> List[Order]:
+        """Get bookstore's orders"""
+        async with self.db_pool.acquire() as conn:
+            orders_rows = await conn.fetch('''
+                SELECT * FROM orders
+                WHERE bookstore_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
+            ''', bookstore_id, limit, offset)
+            
+            orders = []
+            for order_row in orders_rows:
+                items_rows = await conn.fetch('''
+                    SELECT * FROM order_items WHERE order_id = $1
+                ''', order_row['id'])
+                
+                items = [OrderItem(**dict(row)) for row in items_rows]
+                order = Order(**dict(order_row), items=items)
+                orders.append(order)
+            
+            return orders
+    
+    async def update_order_status(
+        self,
+        order_id: int,
+        order_status: Optional[str] = None,
+        payment_status: Optional[str] = None
+    ) -> Optional[Order]:
+        """Update order status"""
+        async with self.db_pool.acquire() as conn:
+            updates = []
+            params = []
+            param_idx = 1
+            
+            if order_status:
+                updates.append(f"order_status = ${param_idx}")
+                params.append(order_status)
+                param_idx += 1
+            
+            if payment_status:
+                updates.append(f"payment_status = ${param_idx}")
+                params.append(payment_status)
+                param_idx += 1
+            
+            if not updates:
+                return await self.get_order_by_id(order_id)
+            
+            updates.append(f"updated_at = CURRENT_TIMESTAMP")
+            params.append(order_id)
+            
+            query = f'''
+                UPDATE orders
+                SET {', '.join(updates)}
+                WHERE id = ${param_idx}
+                RETURNING *
+            '''
+            
+            order_row = await conn.fetchrow(query, *params)
+            if not order_row:
+                return None
+            
+            return await self.get_order_by_id(order_id)
+    
+    async def cancel_order(self, order_id: int, user_id: int) -> bool:
+        """Cancel order and restore stock"""
+        async with self.db_pool.acquire() as conn:
+            async with conn.transaction():
+                # Check order belongs to user and is cancellable
+                order = await conn.fetchrow('''
+                    SELECT * FROM orders
+                    WHERE id = $1 AND user_id = $2
+                    AND order_status IN ('pending', 'confirmed')
+                ''', order_id, user_id)
+                
+                if not order:
+                    return False
+                
+                # Restore stock
+                items = await conn.fetch('''
+                    SELECT * FROM order_items WHERE order_id = $1
+                ''', order_id)
+                
+                for item in items:
+                    await conn.execute('''
+                        UPDATE book_links
+                        SET stock_quantity = stock_quantity + $1,
+                            sold_count = sold_count - $1,
+                            stock_status = CASE 
+                                WHEN stock_quantity + $1 > 0 THEN 'available'
+                                ELSE stock_status
+                            END
+                        WHERE id = $2
+                    ''', item['quantity'], item['book_link_id'])
+                
+                # Update order status
+                await conn.execute('''
+                    UPDATE orders
+                    SET order_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $1
+                ''', order_id)
+                
+                return True
+    
+    async def get_bookstore_statistics(self, bookstore_id: int) -> Dict:
+        """Get bookstore statistics"""
+        async with self.db_pool.acquire() as conn:
+            # Total orders
+            total_orders = await conn.fetchval('''
+                SELECT COUNT(*) FROM orders WHERE bookstore_id = $1
+            ''', bookstore_id)
+            
+            # Total revenue
+            total_revenue = await conn.fetchval('''
+                SELECT COALESCE(SUM(total_amount), 0) FROM orders
+                WHERE bookstore_id = $1 AND payment_status = 'paid'
+            ''', bookstore_id)
+            
+            # Total books sold
+            total_books_sold = await conn.fetchval('''
+                SELECT COALESCE(SUM(oi.quantity), 0)
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                WHERE o.bookstore_id = $1
+            ''', bookstore_id)
+            
+            # Total views
+            total_views = await conn.fetchval('''
+                SELECT COALESCE(SUM(view_count), 0)
+                FROM book_links
+                WHERE bookstore_id = $1
+            ''', bookstore_id)
+            
+            # Order status breakdown
+            order_status = await conn.fetch('''
+                SELECT order_status, COUNT(*) as count
+                FROM orders
+                WHERE bookstore_id = $1
+                GROUP BY order_status
+            ''', bookstore_id)
+            
+            # Top selling books
+            top_books = await conn.fetch('''
+                SELECT 
+                    bl.book_id,
+                    b.title,
+                    b.authors,
+                    SUM(oi.quantity) as total_sold,
+                    SUM(oi.subtotal) as total_revenue
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                JOIN book_links bl ON oi.book_link_id = bl.id
+                LEFT JOIN books b ON bl.book_id = b.product_id
+                WHERE o.bookstore_id = $1
+                GROUP BY bl.book_id, b.title, b.authors
+                ORDER BY total_sold DESC
+                LIMIT 10
+            ''', bookstore_id)
+            
+            return {
+                'total_orders': total_orders,
+                'total_revenue': float(total_revenue) if total_revenue else 0,
+                'total_books_sold': total_books_sold,
+                'total_views': total_views,
+                'order_status_breakdown': [dict(row) for row in order_status],
+                'top_selling_books': [dict(row) for row in top_books]
+            }

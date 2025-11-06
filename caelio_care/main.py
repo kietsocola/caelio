@@ -17,7 +17,8 @@ from .emotional_system import EmotionalTestSystem, EmotionalAnswers, EmotionalPr
 from .white_books import WhiteBooksManager, WhiteBookCreate, WhiteBook
 from .bookstore import (
     BookstoreManager, BookstoreCreate, Bookstore,
-    BookLinkCreate, BookLink
+    BookLinkCreate, BookLink,
+    OrderCreate, Order, OrderItem
 )
 
 # Global variables
@@ -632,6 +633,226 @@ async def search_books(query: str, limit: int = 20):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error searching books: {str(e)}")
+
+# === BOOK LINK VIEW COUNT ===
+
+@app.post("/book-links/{book_link_id}/view")
+async def increment_book_link_view(book_link_id: int):
+    """Increment view count for a book link"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        success = await bookstore_manager.increment_view_count(book_link_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Book link not found")
+        return {"message": "View count incremented successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error incrementing view count: {str(e)}")
+
+@app.get("/book-links/{book_link_id}")
+async def get_book_link_detail(book_link_id: int):
+    """Get book link detail with full information"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        book_link = await bookstore_manager.get_book_link_by_id(book_link_id)
+        if not book_link:
+            raise HTTPException(status_code=404, detail="Book link not found")
+        return book_link
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting book link: {str(e)}")
+
+# === ORDER MANAGEMENT ===
+
+@app.post("/orders/create", response_model=Order)
+async def create_order(
+    order_data: OrderCreate,
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new order (requires authentication)"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        order = await bookstore_manager.create_order(current_user.user_id, order_data)
+        return order
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
+
+@app.get("/orders/{order_id}", response_model=Order)
+async def get_order_detail(
+    order_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """Get order detail (user can only see their own orders)"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        order = await bookstore_manager.get_order_by_id(order_id, current_user.user_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        return order
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting order: {str(e)}")
+
+@app.get("/orders/my-orders", response_model=List[Order])
+async def get_my_orders(
+    page: int = 1,
+    page_size: int = 20,
+    current_user: User = Depends(get_current_user)
+):
+    """Get user's orders"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        offset = (page - 1) * page_size
+        orders = await bookstore_manager.get_user_orders(current_user.user_id, page_size, offset)
+        return orders
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting orders: {str(e)}")
+
+@app.put("/orders/{order_id}/cancel")
+async def cancel_order(
+    order_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """Cancel order (only if status is pending or confirmed)"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        success = await bookstore_manager.cancel_order(order_id, current_user.user_id)
+        if not success:
+            raise HTTPException(status_code=400, detail="Cannot cancel this order")
+        return {"message": "Order cancelled successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error cancelling order: {str(e)}")
+
+@app.put("/orders/{order_id}/status")
+async def update_order_status(
+    order_id: int,
+    order_status: Optional[str] = None,
+    payment_status: Optional[str] = None
+):
+    """Update order status (for bookstore/admin use)"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        order = await bookstore_manager.update_order_status(order_id, order_status, payment_status)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        return order
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating order status: {str(e)}")
+
+@app.get("/bookstores/{bookstore_id}/orders", response_model=List[Order])
+async def get_bookstore_orders(
+    bookstore_id: int,
+    page: int = 1,
+    page_size: int = 50
+):
+    """Get bookstore orders (for bookstore management)"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        offset = (page - 1) * page_size
+        orders = await bookstore_manager.get_bookstore_orders(bookstore_id, page_size, offset)
+        return orders
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting bookstore orders: {str(e)}")
+
+@app.get("/bookstores/{bookstore_id}/statistics")
+async def get_bookstore_statistics(bookstore_id: int):
+    """Get bookstore statistics (sales, views, top books, etc.)"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        stats = await bookstore_manager.get_bookstore_statistics(bookstore_id)
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting statistics: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

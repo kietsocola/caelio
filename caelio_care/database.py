@@ -140,6 +140,9 @@ class Database:
                     bookstore_id INTEGER REFERENCES bookstores(id) ON DELETE CASCADE,
                     purchase_url TEXT NOT NULL,
                     price FLOAT,
+                    stock_quantity INTEGER DEFAULT 0,
+                    sold_count INTEGER DEFAULT 0,
+                    view_count INTEGER DEFAULT 0,
                     stock_status VARCHAR(50) DEFAULT 'available',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -153,6 +156,52 @@ class Database:
             ''')
             await conn.execute('''
                 CREATE INDEX IF NOT EXISTS idx_book_links_bookstore_id ON book_links(bookstore_id)
+            ''')
+            
+            # Orders table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS orders (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(user_id),
+                    bookstore_id INTEGER REFERENCES bookstores(id),
+                    order_number VARCHAR(50) UNIQUE NOT NULL,
+                    total_amount FLOAT NOT NULL,
+                    order_status VARCHAR(50) DEFAULT 'pending',
+                    payment_status VARCHAR(50) DEFAULT 'unpaid',
+                    payment_method VARCHAR(50),
+                    shipping_address TEXT NOT NULL,
+                    shipping_phone VARCHAR(50) NOT NULL,
+                    shipping_name VARCHAR(255) NOT NULL,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Order items table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS order_items (
+                    id SERIAL PRIMARY KEY,
+                    order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+                    book_link_id INTEGER REFERENCES book_links(id),
+                    book_id BIGINT NOT NULL,
+                    book_title VARCHAR(500),
+                    quantity INTEGER NOT NULL,
+                    unit_price FLOAT NOT NULL,
+                    subtotal FLOAT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create indexes for orders
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)
+            ''')
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_orders_bookstore_id ON orders(bookstore_id)
+            ''')
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id)
             ''')
             
             print("Database tables created successfully")
