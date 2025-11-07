@@ -14,7 +14,10 @@ from contextlib import asynccontextmanager
 from .database import init_database, get_db
 from .auth import AuthManager, UserCreate, UserLogin, User, Token
 from .emotional_system import EmotionalTestSystem, EmotionalAnswers, EmotionalProfile
-from .white_books import WhiteBooksManager, WhiteBookCreate, WhiteBook
+from .white_books import (
+    WhiteBooksManager, WhiteBookCreate, WhiteBook,
+    ChapterCreate, Chapter, WhiteBookUpdate
+)
 from .bookstore import (
     BookstoreManager, BookstoreCreate, Bookstore,
     BookLinkCreate, BookLink,
@@ -116,6 +119,20 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=404, detail="User not found")
     
     return user
+
+async def ensure_white_books_manager():
+    """Ensure white books manager is initialized"""
+    global white_books_manager
+    
+    if white_books_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            white_books_manager = WhiteBooksManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    return white_books_manager
 
 # Optional dependency to get current user (no error if not authenticated)  
 async def get_optional_current_user(request: Request) -> Optional[User]:
@@ -309,7 +326,7 @@ async def create_white_book(
     book_data: WhiteBookCreate,
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new white book"""
+    """Create a new white book with metadata (title, cover, description)"""
     global white_books_manager
     
     # Ensure white_books_manager is initialized
@@ -323,15 +340,20 @@ async def create_white_book(
     
     try:
         book = await white_books_manager.create_book(current_user.user_id, book_data)
+        if book is None:
+            raise HTTPException(status_code=500, detail="Book creation returned None - database might not have been updated")
         return book
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error creating book: {str(e)}")
 
 @app.get("/white-books/my-books", response_model=List[WhiteBook])
 async def get_my_white_books(current_user: User = Depends(get_current_user)):
     """Get user's white books"""
+    manager = await ensure_white_books_manager()
     try:
-        books = await white_books_manager.get_user_books(current_user.user_id)
+        books = await manager.get_user_books(current_user.user_id)
         return books
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting books: {str(e)}")
@@ -342,8 +364,9 @@ async def publish_white_book(
     current_user: User = Depends(get_current_user)
 ):
     """Publish a white book"""
+    manager = await ensure_white_books_manager()
     try:
-        success = await white_books_manager.publish_book(book_id, current_user.user_id)
+        success = await manager.publish_book(book_id, current_user.user_id)
         if not success:
             raise HTTPException(status_code=404, detail="Book not found or not authorized")
         
@@ -358,9 +381,10 @@ async def get_published_white_books(
     page_size: int = 20
 ):
     """Get published white books"""
+    manager = await ensure_white_books_manager()
     try:
         offset = (page - 1) * page_size
-        books = await white_books_manager.get_published_books(
+        books = await manager.get_published_books(
             emotional_layer=emotional_layer,
             limit=page_size,
             offset=offset
@@ -370,26 +394,141 @@ async def get_published_white_books(
         raise HTTPException(status_code=500, detail=f"Error getting published books: {str(e)}")
 
 @app.get("/white-books/{book_id}", response_model=WhiteBook)
-async def get_white_book_detail(book_id: int):
-    """Get white book detail"""
+async def get_white_book_detail(book_id: int, include_chapters: bool = True):
+    """Get white book detail with optional chapters"""
+    manager = await ensure_white_books_manager()
     try:
-        book = await white_books_manager.get_book_by_id(book_id, include_author=True)
+        book = await manager.get_book_by_id(book_id, include_author=True, include_chapters=include_chapters)
         if not book:
             raise HTTPException(status_code=404, detail="Book not found")
         
         if book.is_published:
             # Increment view count for published books
-            await white_books_manager.increment_views(book_id)
+            await manager.increment_views(book_id)
         
         return book
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting book detail: {str(e)}")
 
+@app.put("/white-books/{book_id}", response_model=WhiteBook)
+async def update_white_book(
+    book_id: int,
+    book_data: WhiteBookUpdate,
+    current_user: User = Depends(get_current_user)
+):
+    """Update white book metadata (title, cover_image, description, tags)"""
+    manager = await ensure_white_books_manager()
+    try:
+        book = await manager.update_book(book_id, current_user.user_id, book_data)
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found or not authorized")
+        return book
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating book: {str(e)}")
+
+@app.post("/white-books/{book_id}/chapters", response_model=Chapter)
+async def add_chapter_to_book(
+    book_id: int,
+    chapter_data: ChapterCreate,
+    current_user: User = Depends(get_current_user)
+):
+    """Add a new chapter to a white book"""
+    manager = await ensure_white_books_manager()
+    try:
+        # Verify book ownership
+        book = await manager.get_book_by_id(book_id, include_chapters=False)
+        if not book or book.author_id != current_user.user_id:
+            raise HTTPException(status_code=404, detail="Book not found or not authorized")
+        
+        chapter = await manager.add_chapter(book_id, current_user.user_id, chapter_data)
+        return chapter
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error adding chapter: {str(e)}")
+
+@app.get("/white-books/{book_id}/chapters", response_model=List[Chapter])
+async def get_book_chapters(book_id: int):
+    """Get all chapters of a white book"""
+    manager = await ensure_white_books_manager()
+    try:
+        chapters = await manager.get_book_chapters(book_id)
+        return chapters
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting chapters: {str(e)}")
+
+@app.delete("/white-books/{book_id}/chapters/{chapter_id}")
+async def delete_chapter(
+    book_id: int,
+    chapter_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a chapter from a white book"""
+    manager = await ensure_white_books_manager()
+    try:
+        # Verify book ownership
+        book = await manager.get_book_by_id(book_id, include_chapters=False)
+        if not book or book.author_id != current_user.user_id:
+            raise HTTPException(status_code=404, detail="Book not found or not authorized")
+        
+        success = await manager.delete_chapter(chapter_id, current_user.user_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Chapter not found or not authorized")
+        
+        return {"message": "Chapter deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting chapter: {str(e)}")
+
+@app.put("/white-books/{book_id}/unpublish")
+async def unpublish_white_book(
+    book_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """Unpublish a white book"""
+    manager = await ensure_white_books_manager()
+    try:
+        success = await manager.unpublish_book(book_id, current_user.user_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Book not found or not authorized")
+        
+        return {"message": "Book unpublished successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error unpublishing book: {str(e)}")
+
+@app.delete("/white-books/{book_id}")
+async def delete_white_book(
+    book_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a white book and all its chapters"""
+    manager = await ensure_white_books_manager()
+    try:
+        success = await manager.delete_book(book_id, current_user.user_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Book not found or not authorized")
+        
+        return {"message": "Book deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting book: {str(e)}")
+
+@app.post("/white-books/{book_id}/like")
+async def toggle_like_white_book(
+    book_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """Toggle like on a white book"""
+    manager = await ensure_white_books_manager()
+    try:
+        result = await manager.toggle_like(book_id, current_user.user_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error toggling like: {str(e)}")
+
+
 @app.get("/white-books/search/{query}", response_model=List[WhiteBook])
 async def search_white_books(query: str, limit: int = 20):
     """Search white books"""
+    manager = await ensure_white_books_manager()
     try:
-        books = await white_books_manager.search_books(query, limit)
+        books = await manager.search_books(query, limit)
         return books
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error searching books: {str(e)}")

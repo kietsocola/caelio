@@ -66,20 +66,47 @@ class Database:
             # White books (user-created books)
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS white_books (
-                    book_id SERIAL PRIMARY KEY,
-                    author_id INTEGER REFERENCES users(user_id),
+                    id SERIAL PRIMARY KEY,
+                    author_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
                     title VARCHAR(500) NOT NULL,
-                    category VARCHAR(100),
-                    content TEXT NOT NULL,
+                    cover_image TEXT,
+                    description TEXT,
                     emotional_layer VARCHAR(50),
-                    prompt_used TEXT,
                     tags TEXT[],
                     is_published BOOLEAN DEFAULT FALSE,
+                    view_count INTEGER DEFAULT 0,
+                    like_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # White book chapters
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS white_book_chapters (
+                    id SERIAL PRIMARY KEY,
+                    book_id INTEGER REFERENCES white_books(id) ON DELETE CASCADE,
+                    chapter_number INTEGER NOT NULL,
+                    chapter_title VARCHAR(500) NOT NULL,
+                    content TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    views INTEGER DEFAULT 0,
-                    likes INTEGER DEFAULT 0
+                    UNIQUE(book_id, chapter_number)
                 )
+            ''')
+            
+            # Create indexes for white books
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_white_books_author_id ON white_books(author_id)
+            ''')
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_white_books_emotional_layer ON white_books(emotional_layer)
+            ''')
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_white_books_is_published ON white_books(is_published)
+            ''')
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_white_book_chapters_book_id ON white_book_chapters(book_id)
             ''')
             
             # Book recommendations/prescriptions
