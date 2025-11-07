@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Dict, List, Optional, Any
 import asyncio
+import json
+import traceback
 from contextlib import asynccontextmanager
 
 # Local imports
@@ -280,8 +282,9 @@ async def analyze_emotional_test(
                         )
                         VALUES ($1, $2, $3, $4, $5, $6, $7)
                     ''', 
-                        current_user.id, answers_dict, profile.perma_score,
-                        profile.dass_score, profile.mbi_score, profile.emotional_layer, archetype
+                        current_user.user_id, json.dumps(answers_dict), profile.perma_score,
+                        profile.dass_score, profile.mbi_score, profile.emotional_layer, 
+                        archetype if archetype else None
                     )
             except Exception as e:
                 # If saving fails, continue without error
@@ -308,13 +311,44 @@ async def get_my_emotional_results(current_user: User = Depends(get_current_user
         db_pool = await get_db()
         async with db_pool.acquire() as conn:
             results = await conn.fetch('''
-                SELECT * FROM emotional_test_results
+                SELECT 
+                    result_id,
+                    answers,
+                    perma_score,
+                    dass_score,
+                    mbi_score,
+                    emotional_layer,
+                    archetype,
+                    created_at
+                FROM emotional_test_results
                 WHERE user_id = $1
                 ORDER BY created_at DESC
-                LIMIT 10
+                LIMIT 20
             ''', current_user.user_id)
             
-            return [dict(result) for result in results]
+            # Format results
+            formatted_results = []
+            for result in results:
+                formatted_results.append({
+                    "result_id": result['result_id'],
+                    "answers": result['answers'],  # JSONB already parsed
+                    "perma_score": float(result['perma_score']),
+                    "dass_score": float(result['dass_score']),
+                    "mbi_score": float(result['mbi_score']),
+                    "emotional_layer": result['emotional_layer'],
+                    "archetype": result['archetype'],
+                    "created_at": result['created_at'].isoformat() if result['created_at'] else None,
+                    "interpretation": {
+                        "perma": "Positive" if result['perma_score'] >= 3.5 else "Moderate" if result['perma_score'] >= 2.5 else "Low",
+                        "dass": "High stress" if result['dass_score'] >= 3.0 else "Moderate stress" if result['dass_score'] >= 2.0 else "Low stress",
+                        "mbi": "Burnout risk" if result['mbi_score'] >= 3.5 else "Moderate" if result['mbi_score'] >= 2.5 else "Good"
+                    }
+                })
+            
+            return {
+                "total": len(formatted_results),
+                "results": formatted_results
+            }
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting results: {str(e)}")
