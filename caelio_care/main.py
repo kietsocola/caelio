@@ -162,6 +162,34 @@ async def get_optional_current_user(request: Request) -> Optional[User]:
     except Exception:
         return None
 
+# Role-based authorization dependencies
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Require admin role"""
+    if current_user.role != 'admin':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user
+
+async def require_bookstore(current_user: User = Depends(get_current_user)) -> User:
+    """Require bookstore role"""
+    if current_user.role != 'bookstore':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bookstore access required"
+        )
+    return current_user
+
+async def require_admin_or_bookstore(current_user: User = Depends(get_current_user)) -> User:
+    """Require admin or bookstore role"""
+    if current_user.role not in ['admin', 'bookstore']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or Bookstore access required"
+        )
+    return current_user
+
 # === BASIC ENDPOINTS ===
 
 @app.get("/")
@@ -238,6 +266,95 @@ async def login(login_data: UserLogin):
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     """Get current user info"""
     return current_user
+
+# === ADMIN ENDPOINTS ===
+
+@app.get("/admin/users")
+async def get_all_users(
+    page: int = 1,
+    page_size: int = 50,
+    role: Optional[str] = None,
+    admin: User = Depends(require_admin)
+):
+    """Get all users (admin only)"""
+    try:
+        db_pool = await get_db()
+        async with db_pool.acquire() as conn:
+            # Build query
+            if role:
+                query = '''
+                    SELECT user_id, email, username, full_name, role, created_at, is_active
+                    FROM users
+                    WHERE role = $1
+                    ORDER BY created_at DESC
+                    LIMIT $2 OFFSET $3
+                '''
+                params = [role, page_size, (page - 1) * page_size]
+            else:
+                query = '''
+                    SELECT user_id, email, username, full_name, role, created_at, is_active
+                    FROM users
+                    ORDER BY created_at DESC
+                    LIMIT $1 OFFSET $2
+                '''
+                params = [page_size, (page - 1) * page_size]
+            
+            users = await conn.fetch(query, *params)
+            
+            # Get total count
+            if role:
+                total = await conn.fetchval('SELECT COUNT(*) FROM users WHERE role = $1', role)
+            else:
+                total = await conn.fetchval('SELECT COUNT(*) FROM users')
+            
+            return {
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "users": [dict(user) for user in users]
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting users: {str(e)}")
+
+@app.put("/admin/users/{user_id}/role")
+async def update_user_role(
+    user_id: int,
+    new_role: str,
+    admin: User = Depends(require_admin)
+):
+    """Update user role (admin only)"""
+    if new_role not in ['user', 'admin', 'bookstore']:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    
+    try:
+        db_pool = await get_db()
+        async with db_pool.acquire() as conn:
+            await conn.execute('''
+                UPDATE users SET role = $1 WHERE user_id = $2
+            ''', new_role, user_id)
+            
+            return {"message": f"User role updated to {new_role}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating user role: {str(e)}")
+
+@app.put("/admin/users/{user_id}/activate")
+async def activate_user(
+    user_id: int,
+    is_active: bool,
+    admin: User = Depends(require_admin)
+):
+    """Activate/deactivate user (admin only)"""
+    try:
+        db_pool = await get_db()
+        async with db_pool.acquire() as conn:
+            await conn.execute('''
+                UPDATE users SET is_active = $1 WHERE user_id = $2
+            ''', is_active, user_id)
+            
+            status_text = "activated" if is_active else "deactivated"
+            return {"message": f"User {status_text}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating user status: {str(e)}")
 
 # === EMOTIONAL ASSESSMENT ENDPOINTS ===
 
@@ -961,9 +1078,10 @@ async def cancel_order(
 async def update_order_status(
     order_id: int,
     order_status: Optional[str] = None,
-    payment_status: Optional[str] = None
+    payment_status: Optional[str] = None,
+    current_user: User = Depends(require_admin_or_bookstore)
 ):
-    """Update order status (for bookstore/admin use)"""
+    """Update order status (requires admin or bookstore role)"""
     global bookstore_manager
     
     if bookstore_manager is None:
@@ -988,9 +1106,10 @@ async def update_order_status(
 async def get_bookstore_orders(
     bookstore_id: int,
     page: int = 1,
-    page_size: int = 50
+    page_size: int = 50,
+    current_user: User = Depends(require_admin_or_bookstore)
 ):
-    """Get bookstore orders (for bookstore management)"""
+    """Get bookstore orders (requires admin or bookstore role)"""
     global bookstore_manager
     
     if bookstore_manager is None:
@@ -1009,8 +1128,11 @@ async def get_bookstore_orders(
         raise HTTPException(status_code=500, detail=f"Error getting bookstore orders: {str(e)}")
 
 @app.get("/bookstores/{bookstore_id}/statistics")
-async def get_bookstore_statistics(bookstore_id: int):
-    """Get bookstore statistics (sales, views, top books, etc.)"""
+async def get_bookstore_statistics(
+    bookstore_id: int, 
+    current_user: User = Depends(require_admin_or_bookstore)
+):
+    """Get bookstore statistics (requires admin or bookstore role)"""
     global bookstore_manager
     
     if bookstore_manager is None:

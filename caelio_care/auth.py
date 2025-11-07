@@ -19,6 +19,7 @@ class UserCreate(BaseModel):
     username: str
     password: str
     full_name: Optional[str] = None
+    role: Optional[str] = "user"  # user, admin, bookstore
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -29,6 +30,7 @@ class User(BaseModel):
     email: str
     username: str
     full_name: Optional[str]
+    role: str = "user"
     created_at: Optional[datetime]
     is_active: bool = True
 
@@ -68,19 +70,24 @@ class AuthManager:
         """Create new user"""
         password_hash = self.hash_password(user_data.password)
         
+        # Validate role
+        if user_data.role not in ['user', 'admin', 'bookstore']:
+            raise ValueError("Invalid role. Must be 'user', 'admin', or 'bookstore'")
+        
         async with self.db_pool.acquire() as conn:
             try:
                 user_id = await conn.fetchval('''
-                    INSERT INTO users (email, username, password_hash, full_name)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO users (email, username, password_hash, full_name, role)
+                    VALUES ($1, $2, $3, $4, $5)
                     RETURNING user_id
-                ''', user_data.email, user_data.username, password_hash, user_data.full_name)
+                ''', user_data.email, user_data.username, password_hash, user_data.full_name, user_data.role)
                 
                 return User(
                     user_id=user_id,
                     email=user_data.email,
                     username=user_data.username,
                     full_name=user_data.full_name,
+                    role=user_data.role,
                     created_at=datetime.now()
                 )
             except asyncpg.UniqueViolationError as e:
@@ -95,7 +102,7 @@ class AuthManager:
         """Authenticate user and return user object"""
         async with self.db_pool.acquire() as conn:
             user_row = await conn.fetchrow('''
-                SELECT user_id, email, username, password_hash, full_name, created_at, is_active
+                SELECT user_id, email, username, password_hash, full_name, role, created_at, is_active
                 FROM users WHERE email = $1
             ''', login_data.email)
             
@@ -105,6 +112,7 @@ class AuthManager:
                     email=user_row['email'],
                     username=user_row['username'],
                     full_name=user_row['full_name'],
+                    role=user_row['role'],
                     created_at=user_row['created_at'],
                     is_active=user_row['is_active']
                 )
@@ -114,7 +122,7 @@ class AuthManager:
         """Get user by ID"""
         async with self.db_pool.acquire() as conn:
             user_row = await conn.fetchrow('''
-                SELECT user_id, email, username, full_name, created_at, is_active
+                SELECT user_id, email, username, full_name, role, created_at, is_active
                 FROM users WHERE user_id = $1
             ''', user_id)
             
@@ -124,6 +132,7 @@ class AuthManager:
                     email=user_row['email'],
                     username=user_row['username'],
                     full_name=user_row['full_name'],
+                    role=user_row['role'],
                     created_at=user_row['created_at'],
                     is_active=user_row['is_active']
                 )
