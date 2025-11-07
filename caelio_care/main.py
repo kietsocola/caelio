@@ -847,6 +847,30 @@ async def create_order(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
 
+@app.get("/orders/my-orders", response_model=List[Order])
+async def get_my_orders(
+    page: int = 1,
+    page_size: int = 20,
+    current_user: User = Depends(get_current_user)
+):
+    """Get user's orders"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        offset = (page - 1) * page_size
+        orders = await bookstore_manager.get_user_orders(current_user.user_id, page_size, offset)
+        return orders
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting orders: {str(e)}")
+
 @app.get("/orders/{order_id}", response_model=Order)
 async def get_order_detail(
     order_id: int,
@@ -872,30 +896,6 @@ async def get_order_detail(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting order: {str(e)}")
-
-@app.get("/orders/my-orders", response_model=List[Order])
-async def get_my_orders(
-    page: int = 1,
-    page_size: int = 20,
-    current_user: User = Depends(get_current_user)
-):
-    """Get user's orders"""
-    global bookstore_manager
-    
-    if bookstore_manager is None:
-        try:
-            await init_database()
-            db_pool = await get_db()
-            bookstore_manager = BookstoreManager(db_pool)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
-    
-    try:
-        offset = (page - 1) * page_size
-        orders = await bookstore_manager.get_user_orders(current_user.user_id, page_size, offset)
-        return orders
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting orders: {str(e)}")
 
 @app.put("/orders/{order_id}/cancel")
 async def cancel_order(
