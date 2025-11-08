@@ -316,6 +316,112 @@ async def get_all_users(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting users: {str(e)}")
 
+@app.get("/admin/white-books")
+async def get_all_white_books_admin(
+    page: int = 1,
+    page_size: int = 50,
+    is_published: Optional[bool] = None,
+    author_id: Optional[int] = None,
+    emotional_layer: Optional[str] = None,
+    title: Optional[str] = None,
+    admin: User = Depends(require_admin)
+):
+    """
+    Get all white books with filters (admin only)
+    
+    Filters:
+    - is_published: true/false to filter by publish status
+    - author_id: filter by specific author
+    - emotional_layer: filter by emotional layer
+    - title: search in book title (case-insensitive)
+    """
+    manager = await ensure_white_books_manager()
+    try:
+        result = await manager.get_all_books(
+            is_published=is_published,
+            author_id=author_id,
+            emotional_layer=emotional_layer,
+            title_search=title,
+            page=page,
+            page_size=page_size
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting books: {str(e)}")
+
+@app.put("/admin/white-books/{book_id}/publish")
+async def admin_publish_white_book(
+    book_id: int,
+    admin: User = Depends(require_admin)
+):
+    """Admin can publish any white book"""
+    manager = await ensure_white_books_manager()
+    try:
+        # Admin can publish without checking author_id
+        async with manager.db_pool.acquire() as conn:
+            result = await conn.execute('''
+                UPDATE white_books
+                SET is_published = TRUE, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+            ''', book_id)
+            
+            if result == "UPDATE 1":
+                return {"message": "Book published successfully by admin"}
+            else:
+                raise HTTPException(status_code=404, detail="Book not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error publishing book: {str(e)}")
+
+@app.put("/admin/white-books/{book_id}/unpublish")
+async def admin_unpublish_white_book(
+    book_id: int,
+    admin: User = Depends(require_admin)
+):
+    """Admin can unpublish any white book"""
+    manager = await ensure_white_books_manager()
+    try:
+        # Admin can unpublish without checking author_id
+        async with manager.db_pool.acquire() as conn:
+            result = await conn.execute('''
+                UPDATE white_books
+                SET is_published = FALSE, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+            ''', book_id)
+            
+            if result == "UPDATE 1":
+                return {"message": "Book unpublished successfully by admin"}
+            else:
+                raise HTTPException(status_code=404, detail="Book not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error unpublishing book: {str(e)}")
+
+@app.delete("/admin/white-books/{book_id}")
+async def admin_delete_white_book(
+    book_id: int,
+    admin: User = Depends(require_admin)
+):
+    """Admin can delete any white book"""
+    manager = await ensure_white_books_manager()
+    try:
+        # Admin can delete without checking author_id or publish status
+        async with manager.db_pool.acquire() as conn:
+            result = await conn.execute('''
+                DELETE FROM white_books WHERE id = $1
+            ''', book_id)
+            
+            if result == "DELETE 1":
+                return {"message": "Book deleted successfully by admin"}
+            else:
+                raise HTTPException(status_code=404, detail="Book not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting book: {str(e)}")
+
 @app.put("/admin/users/{user_id}/role")
 async def update_user_role(
     user_id: int,
@@ -620,7 +726,7 @@ async def delete_chapter(
         if not book or book.author_id != current_user.user_id:
             raise HTTPException(status_code=404, detail="Book not found or not authorized")
         
-        success = await manager.delete_chapter(chapter_id, current_user.user_id)
+        success = await manager.delete_chapter(book_id, chapter_id, current_user.user_id)
         if not success:
             raise HTTPException(status_code=404, detail="Chapter not found or not authorized")
         

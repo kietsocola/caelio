@@ -530,3 +530,95 @@ class WhiteBooksManager:
             ''', book_id)
             
             return [Chapter(**dict(row)) for row in rows]
+    
+    async def get_all_books(
+        self,
+        is_published: Optional[bool] = None,
+        author_id: Optional[int] = None,
+        emotional_layer: Optional[str] = None,
+        title_search: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50
+    ) -> Dict[str, Any]:
+        """
+        Get all white books with filters (admin only)
+        Returns paginated results with total count
+        """
+        async with self.db_pool.acquire() as conn:
+            # Build WHERE clause dynamically
+            where_clauses = []
+            params = []
+            param_idx = 1
+            
+            if is_published is not None:
+                where_clauses.append(f"wb.is_published = ${param_idx}")
+                params.append(is_published)
+                param_idx += 1
+            
+            if author_id is not None:
+                where_clauses.append(f"wb.author_id = ${param_idx}")
+                params.append(author_id)
+                param_idx += 1
+            
+            if emotional_layer:
+                where_clauses.append(f"wb.emotional_layer = ${param_idx}")
+                params.append(emotional_layer)
+                param_idx += 1
+            
+            if title_search:
+                where_clauses.append(f"wb.title ILIKE ${param_idx}")
+                params.append(f"%{title_search}%")
+                param_idx += 1
+            
+            where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+            
+            # Get total count
+            count_query = f'''
+                SELECT COUNT(*) FROM white_books wb {where_sql}
+            '''
+            total = await conn.fetchval(count_query, *params)
+            
+            # Get paginated results
+            offset = (page - 1) * page_size
+            params.extend([page_size, offset])
+            
+            query = f'''
+                SELECT wb.*, u.username as author_username, u.email as author_email,
+                       (SELECT COUNT(*) FROM white_book_chapters WHERE book_id = wb.id) as chapter_count
+                FROM white_books wb
+                LEFT JOIN users u ON wb.author_id = u.user_id
+                {where_sql}
+                ORDER BY wb.created_at DESC
+                LIMIT ${param_idx} OFFSET ${param_idx + 1}
+            '''
+            
+            rows = await conn.fetch(query, *params)
+            
+            books = []
+            for row in rows:
+                book_dict = dict(row)
+                books.append({
+                    "id": book_dict['id'],
+                    "author_id": book_dict['author_id'],
+                    "author_username": book_dict.get('author_username'),
+                    "author_email": book_dict.get('author_email'),
+                    "title": book_dict['title'],
+                    "cover_image": book_dict.get('cover_image'),
+                    "description": book_dict.get('description'),
+                    "emotional_layer": book_dict.get('emotional_layer'),
+                    "tags": book_dict.get('tags') or [],
+                    "is_published": book_dict['is_published'],
+                    "view_count": book_dict['view_count'],
+                    "like_count": book_dict['like_count'],
+                    "chapter_count": book_dict['chapter_count'],
+                    "created_at": book_dict['created_at'].isoformat() if book_dict['created_at'] else None,
+                    "updated_at": book_dict['updated_at'].isoformat() if book_dict['updated_at'] else None
+                })
+            
+            return {
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": (total + page_size - 1) // page_size,
+                "books": books
+            }
