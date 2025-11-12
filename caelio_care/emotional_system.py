@@ -6,6 +6,9 @@ Based on PERMA-DASS model with 4 emotional layers
 from typing import Dict, List, Any, Optional
 from pydantic import BaseModel
 import json
+import pandas as pd
+import os
+import random
 
 class EmotionalAnswers(BaseModel):
     Q1: int  # 1-5 scale for all questions
@@ -107,10 +110,10 @@ class EmotionalTestSystem:
         self.layer_prescriptions = {
             "Nhận diện": {
                 "goal": "Gọi tên cảm xúc, hợp thức hóa nỗi buồn.",
-                "books": [
-                    "Tôi nói gì khi nói về chạy bộ (Haruki Murakami)",
-                    "Đi tìm lẽ sống (Viktor Frankl)",
-                    "Thất lạc cõi người (Dazai Osamu)"
+                "keywords": [
+                    "tâm lý", "cảm xúc", "trầm cảm", "buồn", "stress", "lo âu",
+                    "nhận thức", "mindfulness", "thiền", "suy tư", "tĩnh lặng",
+                    "hồi ký", "nhật ký", "tản văn", "văn học", "nhân sinh"
                 ],
                 "movies": ["About Time", "Little Women", "Lost in Translation"],
                 "writing_prompts": [
@@ -120,10 +123,10 @@ class EmotionalTestSystem:
             },
             "Chấp nhận": {
                 "goal": "Đối thoại và sống cùng cảm xúc.",
-                "books": [
-                    "Yêu những điều không hoàn hảo (Haemin Sunim)",
-                    "Muôn kiếp nhân sinh (Nguyên Phong)",
-                    "The Gifts of Imperfection (Brené Brown)"
+                "keywords": [
+                    "chấp nhận", "yêu thương", "tha thứ", "không hoàn hảo", "tự ái",
+                    "tâm lý học", "phát triển bản thân", "cân bằng", "sống chậm",
+                    "triết lý", "tình yêu", "mối quan hệ", "gia đình"
                 ],
                 "movies": ["The Secret Life of Walter Mitty", "Inside Out"],
                 "writing_prompts": [
@@ -133,10 +136,10 @@ class EmotionalTestSystem:
             },
             "Hồi phục": {
                 "goal": "Tái kết nối năng lượng và tìm lại nhịp sống.",
-                "books": [
-                    "Ikigai (Héctor García)",
-                    "Sức mạnh của sự tĩnh lặng (Eckhart Tolle)",
-                    "Stillness is the Key (Ryan Holiday)"
+                "keywords": [
+                    "hồi phục", "chữa lành", "năng lượng", "sức khỏe", "tinh thần",
+                    "ikigai", "flow", "hạnh phúc", "biết ơn", "niềm vui",
+                    "tĩnh lặng", "meditation", "yoga", "self-care", "balance"
                 ],
                 "movies": ["Eat Pray Love", "Soul (Pixar)"],
                 "writing_prompts": [
@@ -146,10 +149,10 @@ class EmotionalTestSystem:
             },
             "Tái sinh": {
                 "goal": "Chuyển hóa tổn thương thành sáng tạo.",
-                "books": [
-                    "Can đảm bước tiếp (Brené Brown)",
-                    "Atomic Habits (James Clear)",
-                    "Hành trình về phương Đông (Nguyên Phong)"
+                "keywords": [
+                    "thay đổi", "biến đổi", "thành công", "động lực", "mục tiêu",
+                    "can đảm", "dũng cảm", "vượt khó", "resilience", "growth",
+                    "habits", "kỹ năng", "hành động", "chiến thắng", "truyền cảm hứng"
                 ],
                 "movies": ["The Pursuit of Happyness", "Good Will Hunting"],
                 "writing_prompts": [
@@ -158,6 +161,95 @@ class EmotionalTestSystem:
                 ]
             }
         }
+        
+        # Load book database once during initialization
+        self.books_df = self._load_book_database()
+    
+    def _load_book_database(self):
+        """Load book database with fallback options"""
+        # Try multiple paths
+        possible_paths = [
+            'dataset/books_full_data.csv',
+            '../dataset/books_full_data.csv',
+            'books_full_data.csv',
+            'v2/labeled_books_v2.csv'
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                try:
+                    return pd.read_csv(path)
+                except Exception as e:
+                    print(f"Error loading {path}: {e}")
+                    continue
+        
+        # Return empty DataFrame if no file found
+        print("Warning: Book database not found, using empty dataset")
+        return pd.DataFrame()
+    
+    def _safe_string_value(self, value, default=''):
+        """Safely convert value to string, handling NaN"""
+        if pd.isna(value):
+            return default
+        return str(value) if value is not None else default
+    
+    def _search_books_by_keywords(self, keywords: List[str], limit: int = 10) -> List[Dict[str, Any]]:
+        """Search books in database by keywords"""
+        if self.books_df.empty:
+            return []
+        
+        scored_books = []
+        
+        for _, book in self.books_df.iterrows():
+            title = self._safe_string_value(book.get('title', '')).lower()
+            category = self._safe_string_value(book.get('category', '')).lower()
+            summary = self._safe_string_value(book.get('summary', '')).lower()
+            content = self._safe_string_value(book.get('content', '')).lower()
+            
+            # Calculate keyword match score
+            match_score = 0.0
+            for keyword in keywords:
+                keyword_lower = keyword.lower()
+                if keyword_lower in title:
+                    match_score += 3  # Title match is most important
+                if keyword_lower in category:
+                    match_score += 2  # Category match is very important
+                if keyword_lower in summary:
+                    match_score += 1  # Summary match
+                if keyword_lower in content:
+                    match_score += 0.5  # Content match
+            
+            # Quality factors
+            avg_rating = float(book.get('avg_rating', 0)) if pd.notna(book.get('avg_rating')) else 0
+            n_review = int(book.get('n_review', 0)) if pd.notna(book.get('n_review')) else 0
+            
+            rating_boost = (avg_rating / 5.0) * 0.3 if avg_rating > 0 else 0
+            review_boost = min(n_review / 1000, 1.0) * 0.2 if n_review > 0 else 0
+            
+            final_score = match_score + rating_boost + review_boost
+            
+            if final_score > 0.3:  # Threshold for inclusion
+                scored_books.append({
+                    'product_id': self._safe_string_value(book.get('product_id', '')),
+                    'title': self._safe_string_value(book.get('title', '')),
+                    'authors': self._safe_string_value(book.get('authors', '')),
+                    'category': self._safe_string_value(book.get('category', '')),
+                    'summary': self._safe_string_value(book.get('summary', '')),
+                    'avg_rating': avg_rating,
+                    'n_review': n_review,
+                    'cover_link': self._safe_string_value(book.get('cover_link', '')),
+                    'match_score': final_score
+                })
+        
+        # Sort by score and return top results
+        scored_books.sort(key=lambda x: x['match_score'], reverse=True)
+        
+        # Add some randomization to top results (take top limit*2, then random sample)
+        if len(scored_books) > limit:
+            top_candidates = scored_books[:limit * 2]
+            return random.sample(top_candidates, min(limit, len(top_candidates)))
+        
+        return scored_books[:limit]
     
     def calculate_emotional_profile(self, answers: Dict[str, int], archetype: Optional[str] = None) -> EmotionalProfile:
         """Calculate emotional profile from answers"""
@@ -195,30 +287,35 @@ class EmotionalTestSystem:
             archetype_influence=archetype
         )
     
-    def get_book_prescription(self, emotional_layer: str, archetype: Optional[str] = None) -> Dict[str, Any]:
-        """Get book prescription for emotional layer"""
+    def get_book_prescription(self, emotional_layer: str, archetype: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
+        """Get book prescription for emotional layer with real book data"""
         prescription = self.layer_prescriptions.get(emotional_layer, self.layer_prescriptions["Nhận diện"])
         
-        # Customize based on archetype if provided
-        books = prescription["books"].copy()
+        # Get base keywords for emotional layer
+        base_keywords = prescription["keywords"].copy()
         
+        # Add archetype-specific keywords if provided
         if archetype:
-            # Add archetype-specific adjustments
-            archetype_books = {
-                "Kết nối": ["Tâm lý học gia đình", "Sách về mối quan hệ", "Truyện tình cảm"],
-                "Tự do": ["Du ký", "Sách về tự do cá nhân", "Nghệ thuật sống"],
-                "Tri thức": ["Triết học", "Khoa học nhận thức", "Sách học thuật"],
-                "Chinh phục": ["Sách lãnh đạo", "Truyền cảm hứng", "Hồi ký thành công"],
-                "Kiến tạo": ["Self-help", "Kỹ năng thực tế", "Sách kinh doanh"]
+            archetype_keywords = {
+                "Kết nối": ["tâm lý", "mối quan hệ", "gia đình", "tình cảm", "kết nối", "yêu thương", "đồng cảm"],
+                "Tự do": ["du lịch", "tự do", "khám phá", "sáng tạo", "nghệ thuật", "phong cách sống", "cá tính"],
+                "Tri thức": ["triết học", "khoa học", "lịch sử", "nghiên cứu", "tri thức", "học thuật", "tư duy"],
+                "Chinh phục": ["lãnh đạo", "thành công", "chiến lược", "mục tiêu", "động lực", "chinh phục", "thách thức"],
+                "Kiến tạo": ["kỹ năng", "kinh doanh", "khởi nghiệp", "phát triển", "xây dựng", "thực hành", "ứng dụng"]
             }
             
-            if archetype in archetype_books:
-                books.extend(archetype_books[archetype])
+            if archetype in archetype_keywords:
+                base_keywords.extend(archetype_keywords[archetype])
+        
+        # Search real books from database
+        recommended_books = self._search_books_by_keywords(base_keywords, limit=limit)
         
         return {
             "emotional_layer": emotional_layer,
             "goal": prescription["goal"],
-            "recommended_books": books,
+            "recommended_books": recommended_books,  # Now returns real book data with full info
             "recommended_movies": prescription["movies"],
-            "writing_prompts": prescription["writing_prompts"]
+            "writing_prompts": prescription["writing_prompts"],
+            "archetype_applied": archetype,
+            "keywords_used": base_keywords[:10]  # Show first 10 keywords used for search
         }

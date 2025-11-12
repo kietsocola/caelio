@@ -17,80 +17,105 @@ class CaelioPersonalitySystem:
         # Các lựa chọn kích hoạt điểm Synthesizer
         self.synthesizer_choices = ['C3E', 'C4C', 'C5C', 'C6E', 'C7E', 'C8C']
         
-        # Câu hỏi hành trình KHÁM PHÁ (WHY + HOW)
+        # Câu hỏi hành trình KHÁM PHÁ - 10 câu theo guide_11_11.md
+        # Q1-Q4 (WHY): Động cơ đọc sách
+        # Q5-Q10 (HOW): Phong cách đọc + Big Five
         self.discovery_questions = {
+            # WHY Section - Câu 1-4
             'Q1': {
                 'question': 'Nếu một cuốn sách có linh hồn, linh hồn ấy nên làm gì cùng bạn?',
+                'section': 'WHY',
                 'choices': {
-                    'A': {'text': 'Cùng bạn đi qua những vùng cảm xúc sâu thẳm, để hiểu và được hiểu.', 'group': 'Kết nối'},
-                    'B': {'text': 'Thức tỉnh trong bạn khát vọng tự do và bản sắc cá nhân.', 'group': 'Tự do'},
-                    'C': {'text': 'Mở ra những bí mật ẩn sau tri thức của thế giới.', 'group': 'Tri thức'},
-                    'D': {'text': 'Gieo trong bạn ngọn lửa chinh phục và thành tựu.', 'group': 'Chinh phục'},
-                    'E': {'text': 'Dạy bạn cách xây một điều gì đó thực tế và bền vững.', 'group': 'Kiến tạo'}
+                    'A': {'text': 'Cùng bạn đi qua những vùng cảm xúc sâu thẳm, để thấu hiểu các mối quan hệ gia đình và xã hội.', 'group': 'Kết nối'},
+                    'B': {'text': 'Thức tỉnh trong bạn khát vọng tự do, tìm ra bản sắc cá nhân nhưng vẫn hài hòa với thế giới.', 'group': 'Tự do'},
+                    'C': {'text': 'Mở ra những bí mật, giúp bạn hiểu rõ bản chất và quy luật của thế giới.', 'group': 'Tri thức'},
+                    'D': {'text': 'Gieo trong bạn ngọn lửa chinh phục, tạo ra giá trị và tầm ảnh hưởng cho tập thể.', 'group': 'Chinh phục'},
+                    'E': {'text': 'Dạy bạn cách xây một điều gì đó thực tế và bền vững cho tương lai.', 'group': 'Kiến tạo'}
                 }
             },
             'Q2': {
-                'question': 'Khi bạn chọn đọc, điều khiến bạn "ấn nút bắt đầu" là:',
+                'question': 'Điều khiến bạn "ấn nút bắt đầu" đọc một cuốn sách là:',
+                'section': 'WHY',
                 'choices': {
-                    'A': {'text': 'Cảm xúc thôi thúc muốn đồng cảm với những người xa lạ.', 'group': 'Kết nối'},
-                    'B': {'text': 'Niềm khao khát tự định nghĩa bản thân.', 'group': 'Tự do'},
-                    'C': {'text': 'Sự tò mò muốn giải mã một bí ẩn lớn.', 'group': 'Tri thức'},
-                    'D': {'text': 'Ham muốn tạo ra điều có giá trị trong thực tế.', 'group': 'Kiến tạo'},
-                    'E': {'text': 'Mong muốn tiến gần hơn đến thành công.', 'group': 'Chinh phục'}
+                    'A': {'text': 'Cảm xúc thôi thúc muốn đồng cảm với một phận người, một câu chuyện nhân văn.', 'group': 'Kết nối'},
+                    'B': {'text': 'Niềm khao khát được "xách ba lô lên và đi", tự định nghĩa bản thân.', 'group': 'Tự do'},
+                    'C': {'text': 'Sự tò mò muốn giải mã một bí ẩn hoặc hệ thống tri thức.', 'group': 'Tri thức'},
+                    'D': {'text': 'Mong muốn kiên trì học hỏi để tiến gần hơn đến thành công.', 'group': 'Chinh phục'},
+                    'E': {'text': 'Ham muốn tạo ra một ý tưởng, một kế hoạch, một sản phẩm.', 'group': 'Kiến tạo'}
                 }
             },
             'Q3': {
-                'question': 'Khi đọc xong một cuốn sách tuyệt vời, bạn cảm thấy...',
+                'question': 'Mục đích lớn nhất của bạn khi đọc sách là gì?',
+                'section': 'WHY',
                 'choices': {
-                    'A': {'text': 'Muốn chia sẻ và kết nối với ai đó.', 'group': 'Kết nối'},
-                    'B': {'text': 'Muốn sáng tạo hoặc viết ra điều gì đó mới.', 'group': 'Tự do'},
-                    'C': {'text': 'Muốn tiếp tục tìm hiểu sâu hơn, đi đến tận cùng.', 'group': 'Tri thức'},
-                    'D': {'text': 'Muốn hành động và thử nghiệm ngay trong đời sống.', 'group': 'Chinh phục'},
-                    'E': {'text': 'Muốn chiêm nghiệm, tổng hợp lại mọi điều trong đầu.', 'group': 'Synthesizer', 'synthesizer': True}
+                    'A': {'text': 'Để thấu hiểu con người, học cách đối nhân xử thế và chữa lành cảm xúc.', 'group': 'Kết nối'},
+                    'B': {'text': 'Để tìm ra con đường riêng, sống tự do và đúng với bản sắc của mình.', 'group': 'Tự do'},
+                    'C': {'text': 'Để giải mã thế giới, hiểu sâu về một lĩnh vực.', 'group': 'Tri thức'},
+                    'D': {'text': 'Để có động lực, học hỏi kỹ năng và đạt được thành tựu.', 'group': 'Chinh phục'},
+                    'E': {'text': 'Để có cảm hứng, tạo ra một sản phẩm hoặc ý tưởng mới.', 'group': 'Kiến tạo'}
                 }
             },
             'Q4': {
-                'question': 'Khi cầm một cuốn sách, tâm trí bạn giống như:',
-                'choices': {
-                    'A': {'text': 'Một người thám hiểm muốn ghi nhớ từng chi tiết.', 'group': 'Tri thức', 'trait': 'Đọc sâu'},
-                    'B': {'text': 'Một nhà du hành tự do lang thang qua nhiều vùng ý tưởng.', 'group': 'Tự do', 'trait': 'Đọc rộng'},
-                    'C': {'text': 'Một người kết hợp cả hai: học sâu rồi liên kết rộng.', 'group': 'Synthesizer', 'synthesizer': True}
-                }
-            },
-            'Q5': {
-                'question': 'Trong một cuộc trò chuyện về sách, bạn thường:',
-                'choices': {
-                    'A': {'text': 'Lắng nghe câu chuyện và cảm xúc của người khác.', 'group': 'Kết nối', 'trait': 'Hướng ngoại'},
-                    'B': {'text': 'Chia sẻ góc nhìn riêng biệt và tư tưởng của mình.', 'group': 'Tự do', 'trait': 'Hướng nội'},
-                    'C': {'text': 'Phân tích, kết nối và làm rõ những luận điểm trái chiều.', 'group': 'Synthesizer', 'synthesizer': True}
-                }
-            },
-            'Q6': {
-                'question': 'Cảm giác lý tưởng của bạn khi đọc là:',
-                'choices': {
-                    'A': {'text': 'Bình yên, được hiểu.', 'group': 'Kết nối', 'trait': 'Agreeableness cao'},
-                    'B': {'text': 'Tự do, bay bổng.', 'group': 'Tự do', 'trait': 'Openness cao'},
-                    'C': {'text': 'Sâu thẳm, tập trung.', 'group': 'Tri thức', 'trait': 'Conscientiousness cao'},
-                    'D': {'text': 'Hứng khởi, đầy năng lượng.', 'group': 'Chinh phục', 'trait': 'Extraversion cao'},
-                    'E': {'text': 'Khám phá liên tục và "ghép các mảnh hình ảnh tri thức lại".', 'group': 'Synthesizer', 'synthesizer': True}
-                }
-            },
-            'Q7': {
                 'question': 'Một cuốn sách lý tưởng nên:',
+                'section': 'WHY',
                 'choices': {
-                    'A': {'text': 'Là lời tâm sự chân thành.', 'group': 'Kết nối'},
+                    'A': {'text': 'Là lời tâm sự chân thành, giàu tình người.', 'group': 'Kết nối'},
                     'B': {'text': 'Là tiếng gọi phiêu lưu.', 'group': 'Tự do'},
                     'C': {'text': 'Là cánh cửa tri thức.', 'group': 'Tri thức'},
                     'D': {'text': 'Là cẩm nang thành công.', 'group': 'Chinh phục'},
-                    'E': {'text': 'Là tấm gương soi phản chiếu mọi điều bạn từng nghĩ.', 'group': 'Synthesizer', 'synthesizer': True}
+                    'E': {'text': 'Là bản thiết kế để sáng tạo và xây dựng.', 'group': 'Kiến tạo'}
+                }
+            },
+            
+            # HOW Section - Câu 5-10
+            'Q5': {
+                'question': 'Khi cầm một cuốn sách, tâm trí bạn giống như:',
+                'section': 'HOW',
+                'choices': {
+                    'A': {'text': 'Một người thám hiểm, muốn đi sâu, đào bới, và ghi nhớ từng chi tiết.', 'trait': 'Deep', 'bigfive': 'Conscientiousness High'},
+                    'B': {'text': 'Một nhà du hành, lướt qua nhiều vùng ý tưởng để tìm cảm hứng mới.', 'trait': 'Wide', 'bigfive': 'Openness High'},
+                    'C': {'text': 'Một nhà tổng hợp, vừa đào sâu vừa liên kết rộng để tạo ra bức tranh lớn.', 'trait': 'Synthesizer', 'synthesizer': True}
+                }
+            },
+            'Q6': {
+                'question': 'Bạn tin tưởng vào nguồn kiến thức nào hơn?',
+                'section': 'HOW',
+                'choices': {
+                    'A': {'text': 'Sách được viết bởi chuyên gia, học giả, người có thẩm quyền hoặc đã được kiểm chứng (kinh điển).', 'trait': 'Academic', 'bigfive': 'High Power Distance'},
+                    'B': {'text': 'Sách được viết bởi người trẻ, người có trải nghiệm thực tế, hoặc được cộng đồng/KOLs đánh giá cao.', 'trait': 'Practical', 'bigfive': 'Low Power Distance'}
+                }
+            },
+            'Q7': {
+                'question': 'Cuốn sách lý tưởng để "sạc" lại năng lượng cho bạn là:',
+                'section': 'HOW',
+                'choices': {
+                    'A': {'text': 'Một cuốn sách truyền cảm hứng, thúc đẩy hành động, đầy khí thế.', 'trait': 'Social', 'bigfive': 'Extraversion High'},
+                    'B': {'text': 'Một cuốn sách yên tĩnh, nội tâm, suy tư sâu lắng.', 'trait': 'Reflective', 'bigfive': 'Introversion'}
                 }
             },
             'Q8': {
-                'question': 'Khi bạn đọc đến một ý tưởng khó hiểu, bạn:',
+                'question': 'Bạn bị cuốn hút hơn bởi kiểu nhân vật nào?',
+                'section': 'HOW',
                 'choices': {
-                    'A': {'text': 'Bỏ qua và tiếp tục, vì cảm xúc là quan trọng nhất.', 'group': 'Kết nối'},
-                    'B': {'text': 'Ghi chú lại để tìm hiểu sau.', 'group': 'Tri thức'},
-                    'C': {'text': 'Truy tìm tất cả các nguồn liên quan, từ video, nghiên cứu, đến sách khác.', 'group': 'Synthesizer', 'synthesizer': True}
+                    'A': {'text': 'Nhân vật có lòng trắc ẩn, biết hy sinh vì gia đình/cộng đồng, làm điều đúng đắn.', 'trait': 'Empathic', 'bigfive': 'Agreeableness High'},
+                    'B': {'text': 'Nhân vật phức tạp, gai góc, dám phá vỡ quy tắc để theo đuổi mục tiêu cá nhân.', 'trait': 'Analytical', 'bigfive': 'Agreeableness Low'}
+                }
+            },
+            'Q9': {
+                'question': 'Khi chọn sách để thư giãn cuối ngày, bạn tìm kiếm:',
+                'section': 'HOW',
+                'choices': {
+                    'A': {'text': 'Cảm giác an toàn, dễ chịu, một thế giới "chữa lành" để trốn vào.', 'trait': 'Light', 'bigfive': 'Neuroticism High'},
+                    'B': {'text': 'Cảm giác kịch tính, hồi hộp, gay cấn, thậm chí là sợ hãi.', 'trait': 'Intense', 'bigfive': 'Neuroticism Low'}
+                }
+            },
+            'Q10': {
+                'question': 'Bạn thích cách trình bày sách như thế nào nhất?',
+                'section': 'HOW',
+                'choices': {
+                    'A': {'text': 'Kể chuyện sinh động, giàu cảm xúc, dùng ví dụ đời thường.', 'trait': 'Emotional', 'bigfive': 'Agreeableness High'},
+                    'B': {'text': 'Có cấu trúc, logic chặt chẽ, từng bước, có trích dẫn.', 'trait': 'Structured', 'bigfive': 'Conscientiousness High'},
+                    'C': {'text': 'Kích thích tư duy, kết nối đa ngành, mang tính triết lý và phản tư.', 'trait': 'Synthesizer', 'synthesizer': True}
                 }
             }
         }
@@ -136,24 +161,56 @@ class CaelioPersonalitySystem:
         }
 
     def calculate_discovery_profile(self, answers):
-        """Tính toán profile cho hành trình KHÁM PHÁ"""
-        scores = {group: 0 for group in self.groups.keys()}
+        """
+        Tính toán profile cho hành trình KHÁM PHÁ - 10 câu theo guide_11_11.md
+        
+        WHY (Q1-Q4): Đo động cơ đọc → Archetype
+        - Mỗi câu trả lời cộng 1 điểm cho archetype tương ứng
+        - P_archetype_i = WHY_i / ΣWHY
+        - Archetype có điểm cao nhất = nhóm chính
+        
+        HOW (Q5-Q10): Đo phong cách đọc → Big Five + Style traits
+        - Thu thập style traits (Deep, Wide, Synthesizer, etc.)
+        - P_how_j = HOW_j / ΣHOW
+        
+        Synthesizer Flag: ≥3 indicators = TRUE
+        """
+        # Khởi tạo counters
+        archetype_scores = {group: 0 for group in self.groups.keys()}
         synthesizer_score = 0
+        style_traits = []
         
-        # Tính điểm cho từng nhóm
-        for q_id, choice in answers.items():
-            question = self.discovery_questions[q_id]
-            choice_data = question['choices'][choice]
-            
-            # Điểm cho nhóm chính
-            if choice_data['group'] in scores:
-                scores[choice_data['group']] += 1
-            
-            # Điểm Synthesizer
-            if choice_data.get('synthesizer', False):
-                synthesizer_score += 1
+        # Process WHY section (Q1-Q4): Động cơ đọc
+        for q_id in ['Q1', 'Q2', 'Q3', 'Q4']:
+            if q_id in answers:
+                choice = answers[q_id]
+                question = self.discovery_questions.get(q_id)
+                if question:
+                    choice_data = question['choices'].get(choice, {})
+                    
+                    # Count archetype score
+                    group = choice_data.get('group')
+                    if group and group in archetype_scores:
+                        archetype_scores[group] += 1
         
-        return self._determine_profile(scores, synthesizer_score, answers)
+        # Process HOW section (Q5-Q10): Phong cách đọc
+        for q_id in ['Q5', 'Q6', 'Q7', 'Q8', 'Q9', 'Q10']:
+            if q_id in answers:
+                choice = answers[q_id]
+                question = self.discovery_questions.get(q_id)
+                if question:
+                    choice_data = question['choices'].get(choice, {})
+                    
+                    # Collect style traits
+                    trait = choice_data.get('trait')
+                    if trait:
+                        style_traits.append(trait)
+                    
+                    # Check synthesizer indicator
+                    if choice_data.get('synthesizer', False):
+                        synthesizer_score += 1
+        
+        return self._determine_profile(archetype_scores, synthesizer_score, style_traits, answers)
     
     def calculate_professional_profile(self, discovery_answers, professional_answers):
         """Tính toán profile cho hành trình CHUYÊN NGÀNH"""
@@ -184,37 +241,48 @@ class CaelioPersonalitySystem:
         
         return professional_profile
     
-    def _determine_profile(self, scores, synthesizer_score, answers):
-        """Xác định profile dựa trên điểm số"""
-        # Sắp xếp theo điểm số
-        sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    def _determine_profile(self, archetype_scores, synthesizer_score, style_traits, answers):
+        """
+        Xác định profile dựa trên điểm số theo guide_11_11.md
+        
+        Logic:
+        - WHY (60%): Archetype có điểm cao nhất = nhóm chính
+        - Nếu tie, ưu tiên Q1 (câu quan trọng nhất)
+        - Synthesizer flag: ≥3 indicators
+        - HOW (40%): Style traits từ Q5-Q10
+        """
+        # Sắp xếp archetypes theo điểm số
+        sorted_scores = sorted(archetype_scores.items(), key=lambda x: x[1], reverse=True)
         primary_group = sorted_scores[0][0]
         primary_score = sorted_scores[0][1]
         
         secondary_group = sorted_scores[1][0] if len(sorted_scores) > 1 else None
         secondary_score = sorted_scores[1][1] if len(sorted_scores) > 1 else 0
         
-        # Kiểm tra nếu có tie trong nhóm chính
-        if secondary_score == primary_score:
-            # Ưu tiên nhóm xuất hiện nhiều trong WHY (Q1-Q3)
-            why_answers = {q: answers[q] for q in ['Q1', 'Q2', 'Q3'] if q in answers}
-            why_groups = []
-            for q_id, choice in why_answers.items():
-                if q_id in self.discovery_questions:
-                    group = self.discovery_questions[q_id]['choices'][choice]['group']
-                    if group in self.groups:
-                        why_groups.append(group)
-            
-            # Đếm tần suất trong phần WHY
-            why_counts = {group: why_groups.count(group) for group in [primary_group, secondary_group]}
-            if why_counts[secondary_group] > why_counts[primary_group]:
-                primary_group, secondary_group = secondary_group, primary_group
-                primary_score, secondary_score = secondary_score, primary_score
+        # Kiểm tra nếu có tie trong archetype chính
+        if secondary_score == primary_score and secondary_score > 0:
+            # Ưu tiên archetype xuất hiện trong Q1 (câu hỏi quan trọng nhất)
+            if 'Q1' in answers:
+                q1_choice = answers['Q1']
+                q1_data = self.discovery_questions['Q1']['choices'].get(q1_choice, {})
+                q1_group = q1_data.get('group')
+                if q1_group == secondary_group:
+                    primary_group, secondary_group = secondary_group, primary_group
+                    primary_score, secondary_score = secondary_score, primary_score
         
-        # Kiểm tra điều kiện Synthesizer
-        is_synthesizer = False
-        if synthesizer_score >= 3 and abs(primary_score - secondary_score) <= 1:
-            is_synthesizer = True
+        # Kiểm tra điều kiện Synthesizer: ≥3 indicators
+        is_synthesizer = (synthesizer_score >= 3)
+        
+        # Tính tỷ lệ xác suất archetype (P_archetype_i = WHY_i / ΣWHY)
+        total_why_score = sum(archetype_scores.values())
+        archetype_probability = primary_score / total_why_score if total_why_score > 0 else 0
+        
+        # Analyze style traits từ HOW
+        style_counts = {}
+        for style in style_traits:
+            style_counts[style] = style_counts.get(style, 0) + 1
+        
+        dominant_style = max(style_counts, key=style_counts.get) if style_counts else None
         
         # Tạo profile name
         profile_name = primary_group
@@ -226,11 +294,15 @@ class CaelioPersonalitySystem:
             'secondary_group': secondary_group,
             'primary_score': primary_score,
             'secondary_score': secondary_score,
+            'archetype_probability': round(archetype_probability, 2),
             'synthesizer_score': synthesizer_score,
             'is_synthesizer': is_synthesizer,
+            'style_traits': style_traits,
+            'style_counts': style_counts,
+            'dominant_style': dominant_style,
             'profile_name': profile_name,
             'english_name': self.groups[primary_group] + ("–Synthesizer" if is_synthesizer else ""),
-            'all_scores': scores,
+            'all_scores': archetype_scores,
             'is_multi_motivated': abs(primary_score - secondary_score) <= 1
         }
 
@@ -320,28 +392,47 @@ def run_discovery_test():
         return None
 
 def run_example_test():
-    """Chạy ví dụ test theo tài liệu"""
+    """Chạy ví dụ test theo tài liệu guide_11_11.md với 10 câu hỏi mới"""
     system = CaelioPersonalitySystem()
     
-    # Ví dụ từ tài liệu
+    # Ví dụ tạo profile Thinker-Synthesizer theo guide mới
     example_answers = {
-        'Q1': 'C',  # Tri thức
-        'Q2': 'D',  # Kiến tạo  
-        'Q3': 'E',  # Synthesizer +1
-        'Q4': 'C',  # Synthesizer +1
-        'Q5': 'B',  # Tự do
-        'Q6': 'E',  # Synthesizer +1
-        'Q7': 'C',  # Tri thức
-        'Q8': 'C'   # Synthesizer +1
+        # WHY Section (Q1-Q4)
+        'Q1': 'C',  # Tri thức: Mở ra bí mật
+        'Q2': 'C',  # Tri thức: Giải mã bí ẩn
+        'Q3': 'C',  # Tri thức: Giải mã thế giới
+        'Q4': 'C',  # Tri thức: Cánh cửa tri thức
+        
+        # HOW Section (Q5-Q10)
+        'Q5': 'C',  # Synthesizer +1: Nhà tổng hợp
+        'Q6': 'A',  # High Power Distance: Tin chuyên gia
+        'Q7': 'B',  # Introversion: Yên tĩnh nội tâm
+        'Q8': 'B',  # Low Agreeableness: Nhân vật phức tạp
+        'Q9': 'B',  # Low Neuroticism: Kịch tính gay cấn
+        'Q10': 'C'  # Synthesizer +1: Kết nối đa ngành
     }
     
     profile = system.calculate_discovery_profile(example_answers)
     
-    print("=== VÍ DỤ KIỂM TRA ===")
+    print("=== VÍ DỤ KIỂM TRA (Guide 11/11 - 10 câu mới) ===")
     print("Câu trả lời:", example_answers)
-    print(f"Profile: {profile['profile_name']}")
-    print("Kết quả mong đợi: Thinker–Synthesizer")
-    print("Đúng không?", "✓" if "Tri thức" in profile['profile_name'] and "Synthesizer" in profile['profile_name'] else "✗")
+    print(f"\nProfile: {profile['profile_name']}")
+    print(f"English: {profile['english_name']}")
+    print(f"Primary Archetype: {profile['primary_group']} ({profile['primary_score']}/4 điểm WHY)")
+    if profile['secondary_group']:
+        print(f"Secondary Archetype: {profile['secondary_group']} ({profile['secondary_score']} điểm)")
+    print(f"Archetype Probability: {profile['archetype_probability']*100:.0f}%")
+    print(f"\nSynthesizer Score: {profile['synthesizer_score']}/6 possible")
+    print(f"Is Synthesizer: {profile['is_synthesizer']} (cần ≥3)")
+    print(f"\nStyle Traits: {profile['style_traits']}")
+    print(f"Dominant Style: {profile['dominant_style']}")
+    print(f"Style Counts: {profile['style_counts']}")
+    
+    print("\n📊 Kết quả mong đợi: Tri thức–Synthesizer")
+    is_correct = (profile['is_synthesizer'] and 
+                  profile['primary_group'] == 'Tri thức' and 
+                  profile['synthesizer_score'] >= 2)
+    print("✓ PASS" if is_correct else "✗ FAIL")
 
 if __name__ == "__main__":
     # Chạy ví dụ kiểm tra trước

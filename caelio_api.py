@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
 import pandas as pd
 import os
+import random
 from caelio_personality_system import CaelioPersonalitySystem
 from caelio_book_matcher import CaelioBookMatcher
 
@@ -35,32 +36,41 @@ book_matcher = CaelioBookMatcher()
 # === PYDANTIC MODELS ===
 
 class PersonalityAnswers(BaseModel):
-    """Model cho câu trả lời personality test - hành trình khám phá (3 hoặc 8 câu)"""
+    """
+    Model cho câu trả lời personality test - 10 câu theo guide_11_11.md
+    Q1-Q4: WHY (Động cơ đọc) → Archetype
+    Q5-Q10: HOW (Phong cách đọc) → Big Five + Synthesizer
+    """
     Q1: str
     Q2: str
     Q3: str
-    Q4: Optional[str] = None
+    Q4: str
     Q5: Optional[str] = None
     Q6: Optional[str] = None
     Q7: Optional[str] = None
     Q8: Optional[str] = None
+    Q9: Optional[str] = None
+    Q10: Optional[str] = None
     
     class Config:
         schema_extra = {
-            "example_short": {
-                "Q1": "A",
+            "example_why_only": {
+                "Q1": "C",
                 "Q2": "C", 
-                "Q3": "E"
+                "Q3": "C",
+                "Q4": "C"
             },
             "example_full": {
-                "Q1": "A",
-                "Q2": "C", 
-                "Q3": "E",
-                "Q4": "C",
-                "Q5": "B",
-                "Q6": "E",
-                "Q7": "C",
-                "Q8": "C"
+                "Q1": "C",   # WHY: Tri thức
+                "Q2": "C",   # WHY: Tri thức
+                "Q3": "C",   # WHY: Tri thức
+                "Q4": "C",   # WHY: Tri thức
+                "Q5": "C",   # HOW: Synthesizer
+                "Q6": "A",   # HOW: High PD
+                "Q7": "B",   # HOW: Introversion
+                "Q8": "B",   # HOW: Low A
+                "Q9": "B",   # HOW: Low N
+                "Q10": "C"   # HOW: Synthesizer
             }
         }
 
@@ -693,17 +703,21 @@ async def get_question(question_id: str, question_type: str = "discovery"):
 
 @app.post("/analyze", response_model=PersonalityProfile)
 async def analyze_personality(answers: PersonalityAnswers):
-    """Phân tích tính cách từ câu trả lời hành trình khám phá (3 hoặc 8 câu)"""
+    """
+    Phân tích tính cách từ câu trả lời hành trình khám phá
+    
+    Theo guide_11_11.md:
+    - Q1-Q4 (WHY): Tối thiểu 4 câu để xác định archetype
+    - Q1-Q10 (FULL): Đầy đủ 10 câu để có profile hoàn chỉnh + Synthesizer flag
+    """
     try:
         # Chuyển đổi sang format dictionary và loại bỏ None values
         answers_dict = {k: v for k, v in answers.dict().items() if v is not None}
         
-        # Kiểm tra số lượng câu trả lời (phải là 3 hoặc 8)
+        # Kiểm tra số lượng câu trả lời
         num_answers = len(answers_dict)
-        if num_answers != 3 and num_answers != 8:
-            raise HTTPException(status_code=400, detail="Must provide either 3 answers (Q1-Q3) or 8 answers (Q1-Q8)")
         
-        # Validate answers
+        # Validate tất cả answers
         for q_id, answer in answers_dict.items():
             if q_id not in personality_system.discovery_questions:
                 raise HTTPException(status_code=400, detail=f"Invalid question ID: {q_id}")
@@ -712,31 +726,35 @@ async def analyze_personality(answers: PersonalityAnswers):
             if answer not in question_choices:
                 raise HTTPException(status_code=400, detail=f"Invalid answer '{answer}' for question {q_id}")
         
-        # Phân tích dựa trên số câu trả lời
-        if num_answers == 3:
-            # Phân tích sơ bộ từ 3 câu đầu (WHY questions)
-            profile = personality_system.calculate_partial_profile(answers_dict)
-        else:
-            # Phân tích đầy đủ từ 8 câu
+        # Phân tích profile
+        if num_answers >= 4:
+            # Có đủ WHY questions (Q1-Q4) để xác định archetype
             profile = personality_system.calculate_discovery_profile(answers_dict)
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Need at least 4 answers (Q1-Q4) to determine archetype. Received {num_answers} answers."
+            )
         
         # Lấy mô tả
         description = get_personality_description(profile['primary_group'], profile['is_synthesizer'])
         
         return PersonalityProfile(
             primary_group=profile['primary_group'],
-            secondary_group=profile['secondary_group'],
+            secondary_group=profile.get('secondary_group'),
             primary_score=profile['primary_score'],
-            secondary_score=profile['secondary_score'],
+            secondary_score=profile.get('secondary_score', 0),
             synthesizer_score=profile['synthesizer_score'],
             is_synthesizer=profile['is_synthesizer'],
             profile_name=profile['profile_name'],
             english_name=profile['english_name'],
-            all_scores=profile['all_scores'],
-            is_multi_motivated=profile['is_multi_motivated'],
+            all_scores=profile.get('all_scores', {}),
+            is_multi_motivated=profile.get('is_multi_motivated', False),
             description=description
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error analyzing personality: {str(e)}")
 
@@ -784,11 +802,26 @@ async def analyze_professional_personality(answers: ProfessionalAnswers):
         raise HTTPException(status_code=500, detail=f"Error analyzing professional profile: {str(e)}")
 
 @app.post("/recommend", response_model=RecommendationResult)
-async def get_book_recommendations(answers: PersonalityAnswers, top_n: int = 20):
-    """Lấy gợi ý sách dựa trên personality profile"""
+async def get_book_recommendations(
+    answers: PersonalityAnswers, 
+    top_n: int = 20,
+    emotional_fit_score: Optional[float] = None
+):
+    """
+    Lấy gợi ý sách dựa trên personality profile
+    
+    Based on guide_11_11.md scoring formula:
+    - With EmotionFit: Score = 0.6 × ArchetypeMatch + 0.3 × StyleMatch + 0.1 × EmotionFit
+    - Without EmotionFit: Score = 0.6 × ArchetypeMatch + 0.4 × StyleMatch (EmotionFit default = 0.6)
+    
+    Args:
+        answers: Câu trả lời personality test (Q1-Q10)
+        top_n: Số lượng sách gợi ý (default 20)
+        emotional_fit_score: Optional MBI score từ Caelio Care (-4 to +4)
+    """
     try:
         # Phân tích tính cách
-        answers_dict = answers.dict()
+        answers_dict = {k: v for k, v in answers.dict().items() if v is not None}
         profile = personality_system.calculate_discovery_profile(answers_dict)
         
         # Thêm description
@@ -797,10 +830,26 @@ async def get_book_recommendations(answers: PersonalityAnswers, top_n: int = 20)
         # Load dữ liệu sách
         book_df = load_book_database()
         
-        # Lấy gợi ý sách với improved matching (same as /discover)
-        personality_keywords = get_personality_keywords_for_matching(profile['primary_group'], profile['is_synthesizer'])
+        # Xác định có EmotionFit hay không
+        has_emotion_data = emotional_fit_score is not None
         
-        # Score và filter sách
+        # Normalize emotional_fit_score to 0-1 range if provided
+        emotion_fit_normalized = 0.6  # Default neutral value
+        if has_emotion_data:
+            # MBI range: -4 to +4, normalize to 0-1
+            emotion_fit_normalized = (emotional_fit_score + 4) / 8  # Maps [-4,+4] to [0,1]
+            emotion_fit_normalized = max(0.0, min(1.0, emotion_fit_normalized))  # Clamp to [0,1]
+        
+        # Lấy keywords cho archetype matching
+        personality_keywords = get_personality_keywords_for_matching(
+            profile['primary_group'], 
+            profile['is_synthesizer']
+        )
+        
+        # Extract style traits từ profile
+        style_traits = profile.get('style_traits', [])
+        
+        # Score và filter sách theo công thức mới
         scored_books = []
         for _, book in book_df.iterrows():
             cat = safe_string_value(book.get('category', '')).lower()
@@ -808,66 +857,124 @@ async def get_book_recommendations(answers: PersonalityAnswers, top_n: int = 20)
             summary = safe_string_value(book.get('summary', '')).lower()
             content = safe_string_value(book.get('content', '')).lower()
             
-            # Calculate match score
-            match_score = 0.0
+            # 1. ArchetypeMatch (0-1): Keyword matching
+            archetype_match = 0.0
             total_keywords = len(personality_keywords)
             
-            for keyword in personality_keywords:
-                keyword_score = 0
-                if keyword in cat:
-                    keyword_score += 3
-                if keyword in title:
-                    keyword_score += 2
-                if keyword in summary:
-                    keyword_score += 1
-                if keyword in content:
-                    keyword_score += 0.5
+            if total_keywords > 0:
+                matched_keywords = 0
+                for keyword in personality_keywords:
+                    if (keyword in cat or keyword in title or 
+                        keyword in summary or keyword in content):
+                        matched_keywords += 1
                 
-                if keyword_score > 0:
-                    match_score += keyword_score / total_keywords
+                archetype_match = matched_keywords / total_keywords
             
-            # Sales and quality bonuses
-            quantity = float(book.get('quantity', 0)) if pd.notna(book.get('quantity')) else 0
-            sales_boost = min(quantity / 10000, 1.0) * 0.2
+            # 2. StyleMatch (0-1): Style traits matching
+            # Simplified: Assume books have implicit style compatibility
+            # Could be enhanced with book metadata tagging
+            style_match = 0.5  # Default moderate match
             
+            # Boost for synthesizer books (có từ khóa liên ngành)
+            if profile['is_synthesizer']:
+                synthesizer_keywords = ['liên ngành', 'đa ngành', 'tổng hợp', 'hệ thống']
+                for kw in synthesizer_keywords:
+                    if kw in title or kw in summary:
+                        style_match = 0.8
+                        break
+            
+            # Boost based on reading depth (deep vs wide)
+            if 'Deep' in style_traits:
+                deep_keywords = ['chuyên sâu', 'phân tích', 'chi tiết', 'nghiên cứu']
+                for kw in deep_keywords:
+                    if kw in title or kw in summary:
+                        style_match = max(style_match, 0.7)
+                        break
+            
+            if 'Wide' in style_traits:
+                wide_keywords = ['tổng quan', 'phổ thông', 'nhập môn', 'giới thiệu']
+                for kw in wide_keywords:
+                    if kw in title or kw in summary:
+                        style_match = max(style_match, 0.7)
+                        break
+            
+            # 3. EmotionFit: Use normalized MBI or default
+            # Nếu có emotion data, dùng normalized score
+            # Nếu không, dùng default 0.6 (neutral)
+            
+            # Calculate final score based on formula from guide_11_11.md
+            if has_emotion_data:
+                # Có EmotionFit: Score = 0.6×Archetype + 0.3×Style + 0.1×Emotion
+                final_score = (
+                    0.6 * archetype_match + 
+                    0.3 * style_match + 
+                    0.1 * emotion_fit_normalized
+                )
+            else:
+                # Không có EmotionFit: Score = 0.6×Archetype + 0.4×Style
+                final_score = (
+                    0.6 * archetype_match + 
+                    0.4 * style_match
+                )
+            
+            # Bonus factors (quality indicators)
             avg_rating = float(book.get('avg_rating', 0)) if pd.notna(book.get('avg_rating')) else 0
             n_review = int(book.get('n_review', 0)) if pd.notna(book.get('n_review')) else 0
             
-            rating_boost = (avg_rating / 5.0) * 0.1 if avg_rating > 0 else 0
-            review_boost = min(n_review / 1000, 1.0) * 0.1 if n_review > 0 else 0
+            rating_boost = (avg_rating / 5.0) * 0.05 if avg_rating > 0 else 0
+            review_boost = min(n_review / 1000, 1.0) * 0.05 if n_review > 0 else 0
             
-            final_score = match_score + sales_boost + rating_boost + review_boost
+            final_score += rating_boost + review_boost
             
-            if final_score > 0.05:
+            # Only include books with meaningful match
+            if final_score > 0.1:
                 scored_books.append((book, final_score))
         
-        # Sort by score and sales
-        scored_books.sort(key=lambda x: (x[1], float(x[0].get('quantity', 0)) if pd.notna(x[0].get('quantity')) else 0), reverse=True)
+        # Sort by score
+        scored_books.sort(key=lambda x: x[1], reverse=True)
         
-        # Create recommendations
+        # Tạo danh sách recommendations với yếu tố random
+        # Lấy top 2n/3 sách có điểm cao nhất
+        top_books_count = int(top_n * 2 / 3)
+        top_books = scored_books[:top_books_count]
+        
+        # Lấy n/3 sách random từ phần còn lại (để tạo sự đa dạng)
+        random_books_count = top_n - top_books_count
+        remaining_books = scored_books[top_books_count:min(len(scored_books), top_books_count + random_books_count * 3)]
+        
+        if len(remaining_books) > 0:
+            random_books = random.sample(remaining_books, min(random_books_count, len(remaining_books)))
+        else:
+            random_books = []
+        
+        # Kết hợp và xáo trộn thứ tự
+        selected_books = top_books + random_books
+        random.shuffle(selected_books)
+        
+        # Create recommendations từ danh sách đã xáo trộn
         recommendations = []
         match_distribution = {}
         
-        for book, score in scored_books[:top_n]:
+        for book, score in selected_books[:top_n]:
             book_rec = create_book_recommendation(book)
-            book_rec.personality_match_score = score
+            book_rec.personality_match_score = round(score, 3)
             recommendations.append(book_rec)
             
             category = safe_string_value(book.get('category', 'Unknown'))
             match_distribution[category] = match_distribution.get(category, 0) + 1
         
-        # Tạo profile response
+        # Tạo profile response (giữ nguyên cấu trúc)
         profile_response = PersonalityProfile(
             primary_group=profile['primary_group'],
-            secondary_group=profile['secondary_group'],
+            secondary_group=profile.get('secondary_group'),
             primary_score=profile['primary_score'],
-            secondary_score=profile['secondary_score'],
+            secondary_score=profile.get('secondary_score', 0),
             synthesizer_score=profile['synthesizer_score'],
             is_synthesizer=profile['is_synthesizer'],
             profile_name=profile['profile_name'],
             english_name=profile['english_name'],
-            all_scores=profile['all_scores'],
-            is_multi_motivated=profile['is_multi_motivated'],
+            all_scores=profile.get('all_scores', {}),
+            is_multi_motivated=profile.get('is_multi_motivated', False),
             description=description
         )
         
