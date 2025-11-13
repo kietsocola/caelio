@@ -530,6 +530,24 @@ def load_book_database():
     
     return pd.read_csv(book_file)
 
+def load_nha_sach_xua_books():
+    """Load nha_sach_xua books specifically for prioritization"""
+    nsx_paths = [
+        'crawl_data/nha_sach_xua/data_crawl_nha_sach_xua.csv',
+        '../crawl_data/nha_sach_xua/data_crawl_nha_sach_xua.csv',
+        'data_crawl_nha_sach_xua.csv'
+    ]
+    
+    for path in nsx_paths:
+        if os.path.exists(path):
+            try:
+                return pd.read_csv(path)
+            except Exception as e:
+                print(f"Error loading nha_sach_xua {path}: {e}")
+                continue
+    
+    return pd.DataFrame()
+
 
 def ensure_complete_discovery_answers(answers: Dict[str, str]) -> Dict[str, str]:
     """Ensure answers dict contains Q1..Q8 by filling missing with a safe default (first available choice).
@@ -830,6 +848,12 @@ async def get_book_recommendations(
         # Load dữ liệu sách
         book_df = load_book_database()
         
+        # Load nha_sach_xua books for prioritization
+        nsx_df = load_nha_sach_xua_books()
+        nsx_product_ids = set()
+        if not nsx_df.empty:
+            nsx_product_ids = set(str(pid) for pid in nsx_df['product_id'].dropna())
+        
         # Xác định có EmotionFit hay không
         has_emotion_data = emotional_fit_score is not None
         
@@ -851,6 +875,7 @@ async def get_book_recommendations(
         
         # Score và filter sách theo công thức mới
         scored_books = []
+        nsx_books = []
         for _, book in book_df.iterrows():
             cat = safe_string_value(book.get('category', '')).lower()
             title = safe_string_value(book.get('title', '')).lower() 
@@ -926,30 +951,54 @@ async def get_book_recommendations(
             
             final_score += rating_boost + review_boost
             
+            # Check if book is from nha_sach_xua (for tracking only, no boost)
+            product_id_str = safe_string_value(book.get('product_id', ''))
+            is_nsx_book = product_id_str in nsx_product_ids
+            
             # Only include books with meaningful match
             if final_score > 0.1:
-                scored_books.append((book, final_score))
+                scored_books.append((book, final_score, is_nsx_book))
         
-        # Sort by score
+        # Sort all books by score
         scored_books.sort(key=lambda x: x[1], reverse=True)
         
-        # Tạo danh sách recommendations với yếu tố random
-        # Lấy top 2n/3 sách có điểm cao nhất
-        top_books_count = int(top_n * 2 / 3)
-        top_books = scored_books[:top_books_count]
+        # Separate nha_sach_xua books from regular books
+        nsx_books = [(book, score) for book, score, is_nsx in scored_books if is_nsx]
+        regular_books = [(book, score) for book, score, is_nsx in scored_books if not is_nsx]
         
-        # Lấy n/3 sách random từ phần còn lại (để tạo sự đa dạng)
-        random_books_count = top_n - top_books_count
-        remaining_books = scored_books[top_books_count:min(len(scored_books), top_books_count + random_books_count * 3)]
+        # Take top 2 nha_sach_xua books if available
+        guaranteed_nsx = nsx_books[:min(2, len(nsx_books))]
         
-        if len(remaining_books) > 0:
-            random_books = random.sample(remaining_books, min(random_books_count, len(remaining_books)))
+        # Remaining nsx books compete with regular books by score
+        remaining_nsx = nsx_books[2:]
+        all_remaining = regular_books + remaining_nsx
+        all_remaining.sort(key=lambda x: x[1], reverse=True)
+        
+        # Tạo danh sách recommendations với guaranteed nha_sach_xua books
+        # Calculate remaining slots after guaranteed nsx books
+        remaining_slots = top_n - len(guaranteed_nsx)
+        
+        # Take top scoring books from all_remaining
+        top_books_count = int(remaining_slots * 2 / 3)
+        top_books = all_remaining[:top_books_count]
+        
+        # Add some randomization for diversity
+        random_books_count = remaining_slots - top_books_count
+        remaining_for_random = all_remaining[top_books_count:min(len(all_remaining), top_books_count + random_books_count * 3)]
+        
+        if len(remaining_for_random) > 0:
+            random_books = random.sample(remaining_for_random, min(random_books_count, len(remaining_for_random)))
         else:
             random_books = []
         
-        # Kết hợp và xáo trộn thứ tự
-        selected_books = top_books + random_books
-        random.shuffle(selected_books)
+        # Combine: guaranteed top 2 nsx + top scoring + random for diversity
+        selected_books = guaranteed_nsx + top_books + random_books
+        
+        # Shuffle only the non-guaranteed books
+        nsx_selected = selected_books[:len(guaranteed_nsx)]
+        others_selected = selected_books[len(guaranteed_nsx):]
+        random.shuffle(others_selected)
+        selected_books = nsx_selected + others_selected
         
         # Create recommendations từ danh sách đã xáo trộn
         recommendations = []
@@ -1406,6 +1455,42 @@ async def get_book_detail(product_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting book detail: {str(e)}")
+
+@app.get("/categories")
+async def get_categories():
+    """Lấy danh sách tất cả các category có trong database sách
+    
+    Returns:
+        List of unique categories with count
+    """
+    try:
+        # Load book database
+        book_df = load_book_database()
+        
+        # Get unique categories and their counts
+        category_counts = book_df['category'].value_counts().to_dict()
+        
+        # Convert to list of dicts with category and count
+        categories = [
+            {
+                "category": safe_string_value(cat),
+                "count": int(count)
+            }
+            for cat, count in category_counts.items()
+            if pd.notna(cat) and str(cat).strip() != ''
+        ]
+        
+        # Sort by count descending
+        categories.sort(key=lambda x: x['count'], reverse=True)
+        
+        return {
+            "categories": categories,
+            "total_categories": len(categories),
+            "total_books": len(book_df)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting categories: {str(e)}")
 
 @app.get("/groups")
 async def get_personality_groups():

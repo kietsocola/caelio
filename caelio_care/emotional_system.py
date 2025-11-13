@@ -187,6 +187,24 @@ class EmotionalTestSystem:
         print("Warning: Book database not found, using empty dataset")
         return pd.DataFrame()
     
+    def _load_nha_sach_xua_books(self):
+        """Load nha_sach_xua books specifically"""
+        nsx_paths = [
+            'crawl_data/nha_sach_xua/data_crawl_nha_sach_xua.csv',
+            '../crawl_data/nha_sach_xua/data_crawl_nha_sach_xua.csv',
+            'data_crawl_nha_sach_xua.csv'
+        ]
+        
+        for path in nsx_paths:
+            if os.path.exists(path):
+                try:
+                    return pd.read_csv(path)
+                except Exception as e:
+                    print(f"Error loading nha_sach_xua {path}: {e}")
+                    continue
+        
+        return pd.DataFrame()
+    
     def _safe_string_value(self, value, default=''):
         """Safely convert value to string, handling NaN"""
         if pd.isna(value):
@@ -194,11 +212,19 @@ class EmotionalTestSystem:
         return str(value) if value is not None else default
     
     def _search_books_by_keywords(self, keywords: List[str], limit: int = 10) -> List[Dict[str, Any]]:
-        """Search books in database by keywords"""
+        """Search books in database by keywords, prioritizing top 2 nha_sach_xua books"""
         if self.books_df.empty:
             return []
         
-        scored_books = []
+        # Load nha_sach_xua books
+        nsx_df = self._load_nha_sach_xua_books()
+        
+        all_books = []
+        
+        # Get product_ids from nha_sach_xua to identify them
+        nsx_product_ids = set()
+        if not nsx_df.empty:
+            nsx_product_ids = set(str(pid) for pid in nsx_df['product_id'].dropna())
         
         for _, book in self.books_df.iterrows():
             title = self._safe_string_value(book.get('title', '')).lower()
@@ -228,9 +254,13 @@ class EmotionalTestSystem:
             
             final_score = match_score + rating_boost + review_boost
             
+            # Check if book is from nha_sach_xua
+            product_id_str = self._safe_string_value(book.get('product_id', ''))
+            is_nsx_book = product_id_str in nsx_product_ids
+            
             if final_score > 0.3:  # Threshold for inclusion
-                scored_books.append({
-                    'product_id': self._safe_string_value(book.get('product_id', '')),
+                book_dict = {
+                    'product_id': product_id_str,
                     'title': self._safe_string_value(book.get('title', '')),
                     'authors': self._safe_string_value(book.get('authors', '')),
                     'category': self._safe_string_value(book.get('category', '')),
@@ -238,18 +268,37 @@ class EmotionalTestSystem:
                     'avg_rating': avg_rating,
                     'n_review': n_review,
                     'cover_link': self._safe_string_value(book.get('cover_link', '')),
-                    'match_score': final_score
-                })
+                    'match_score': final_score,
+                    'is_nsx_book': is_nsx_book
+                }
+                all_books.append(book_dict)
         
-        # Sort by score and return top results
-        scored_books.sort(key=lambda x: x['match_score'], reverse=True)
+        # Sort all books by score
+        all_books.sort(key=lambda x: x['match_score'], reverse=True)
         
-        # Add some randomization to top results (take top limit*2, then random sample)
-        if len(scored_books) > limit:
-            top_candidates = scored_books[:limit * 2]
-            return random.sample(top_candidates, min(limit, len(top_candidates)))
+        # Separate nha_sach_xua books
+        nsx_books = [b for b in all_books if b['is_nsx_book']]
+        regular_books = [b for b in all_books if not b['is_nsx_book']]
         
-        return scored_books[:limit]
+        # Take top 2 nha_sach_xua books (if available)
+        top_nsx = nsx_books[:min(2, len(nsx_books))]
+        
+        # Calculate how many more books we need
+        remaining_slots = limit - len(top_nsx)
+        
+        # Fill with regular books (or remaining nsx books if they score high enough)
+        # Mix both lists and sort by actual score
+        remaining_nsx = nsx_books[2:]  # nsx books after top 2
+        remaining_pool = regular_books + remaining_nsx
+        remaining_pool.sort(key=lambda x: x['match_score'], reverse=True)
+        
+        # Take top scoring books from remaining pool
+        selected_remaining = remaining_pool[:remaining_slots]
+        
+        # Combine: guaranteed top 2 nsx + best scoring remaining
+        final_results = top_nsx + selected_remaining
+        
+        return final_results[:limit]
     
     def calculate_emotional_profile(self, answers: Dict[str, int], archetype: Optional[str] = None) -> EmotionalProfile:
         """Calculate emotional profile from answers"""

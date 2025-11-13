@@ -173,6 +173,30 @@ class BookstoreManager:
             
             return [Bookstore(**dict(row)) for row in rows]
     
+    async def delete_bookstore(self, bookstore_id: int) -> bool:
+        """Delete a bookstore (admin only)"""
+        async with self.db_pool.acquire() as conn:
+            # Check if bookstore has any orders
+            has_orders = await conn.fetchval(
+                'SELECT EXISTS(SELECT 1 FROM orders WHERE bookstore_id = $1)',
+                bookstore_id
+            )
+            
+            if has_orders:
+                # Soft delete - deactivate instead of deleting
+                result = await conn.execute(
+                    'UPDATE bookstores SET is_active = false WHERE id = $1',
+                    bookstore_id
+                )
+                return result == 'UPDATE 1'
+            else:
+                # Hard delete if no orders
+                result = await conn.execute(
+                    'DELETE FROM bookstores WHERE id = $1',
+                    bookstore_id
+                )
+                return result == 'DELETE 1'
+    
     async def update_bookstore(
         self,
         bookstore_id: int,
@@ -346,6 +370,37 @@ class BookstoreManager:
         distance = R * c
         return distance
     
+    async def update_book_link(self, link_id: int, update_data: Dict) -> Optional[BookLink]:
+        """Update a book purchase link"""
+        async with self.db_pool.acquire() as conn:
+            # Build update query dynamically
+            set_clauses = []
+            values = []
+            param_index = 1
+            
+            for key, value in update_data.items():
+                if key not in ['id', 'book_id', 'bookstore_id', 'created_at']:
+                    set_clauses.append(f"{key} = ${param_index}")
+                    values.append(value)
+                    param_index += 1
+            
+            if not set_clauses:
+                return await self.get_book_link_by_id(link_id)
+            
+            set_clauses.append(f"updated_at = CURRENT_TIMESTAMP")
+            values.append(link_id)
+            query = f'''
+                UPDATE book_links
+                SET {', '.join(set_clauses)}
+                WHERE id = ${param_index}
+                RETURNING *
+            '''
+            
+            row = await conn.fetchrow(query, *values)
+            if row:
+                return BookLink(**dict(row))
+            return None
+    
     async def delete_book_link(self, link_id: int) -> bool:
         """Delete a book purchase link"""
         async with self.db_pool.acquire() as conn:
@@ -397,6 +452,26 @@ class BookstoreManager:
                 ORDER BY avg_rating DESC, n_review DESC
                 LIMIT $2
             ''', f'%{query}%', limit)
+            
+            return [dict(row) for row in rows]
+    
+    async def get_books_with_links(self, limit: int = 100, offset: int = 0) -> List[Dict]:
+        """Get all books that have purchase links"""
+        async with self.db_pool.acquire() as conn:
+            rows = await conn.fetch('''
+                SELECT DISTINCT
+                    b.*,
+                    COUNT(bl.id) as link_count,
+                    MIN(bl.price) as min_price,
+                    MAX(bl.price) as max_price
+                FROM books b
+                INNER JOIN book_links bl ON b.product_id = bl.book_id
+                INNER JOIN bookstores bs ON bl.bookstore_id = bs.id
+                WHERE bs.is_active = true
+                GROUP BY b.product_id
+                ORDER BY link_count DESC, b.avg_rating DESC
+                LIMIT $1 OFFSET $2
+            ''', limit, offset)
             
             return [dict(row) for row in rows]
     

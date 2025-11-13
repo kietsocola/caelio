@@ -909,6 +909,32 @@ async def get_bookstore(bookstore_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting bookstore: {str(e)}")
 
+@app.delete("/bookstores/{bookstore_id}")
+async def delete_bookstore(
+    bookstore_id: int,
+    admin: User = Depends(require_admin)
+):
+    """Delete bookstore (admin only). Soft delete if has orders, hard delete otherwise."""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        success = await bookstore_manager.delete_bookstore(bookstore_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Bookstore not found")
+        return {"message": "Bookstore deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting bookstore: {str(e)}")
+
 @app.post("/bookstores/book-links", response_model=BookLink)
 async def add_book_link(link_data: BookLinkCreate):
     """Add a purchase link for a book (bookstore adds their selling link)"""
@@ -1030,6 +1056,31 @@ async def search_books(query: str, limit: int = 20):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error searching books: {str(e)}")
 
+@app.get("/books/with-links")
+async def get_books_with_links(page: int = 1, page_size: int = 100):
+    """Get all books that have purchase links available"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        offset = (page - 1) * page_size
+        books = await bookstore_manager.get_books_with_links(page_size, offset)
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total": len(books),
+            "books": books
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting books with links: {str(e)}")
+
 # === BOOK LINK VIEW COUNT ===
 
 @app.post("/book-links/{book_link_id}/view")
@@ -1077,6 +1128,77 @@ async def get_book_link_detail(book_link_id: int):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting book link: {str(e)}")
+
+@app.put("/bookstores/book-links/{book_link_id}", response_model=BookLink)
+async def update_book_link(
+    book_link_id: int,
+    purchase_url: Optional[str] = None,
+    price: Optional[float] = None,
+    stock_quantity: Optional[int] = None,
+    stock_status: Optional[str] = None,
+    current_user: User = Depends(require_admin_or_bookstore)
+):
+    """Update book link information (requires admin or bookstore role)"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        # Build update data
+        update_data = {}
+        if purchase_url is not None:
+            update_data['purchase_url'] = purchase_url
+        if price is not None:
+            update_data['price'] = price
+        if stock_quantity is not None:
+            update_data['stock_quantity'] = stock_quantity
+        if stock_status is not None:
+            update_data['stock_status'] = stock_status
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No update data provided")
+        
+        book_link = await bookstore_manager.update_book_link(book_link_id, update_data)
+        if not book_link:
+            raise HTTPException(status_code=404, detail="Book link not found")
+        
+        return book_link
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating book link: {str(e)}")
+
+@app.delete("/bookstores/book-links/{book_link_id}")
+async def delete_book_link(
+    book_link_id: int,
+    current_user: User = Depends(require_admin_or_bookstore)
+):
+    """Delete book link (requires admin or bookstore role)"""
+    global bookstore_manager
+    
+    if bookstore_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            bookstore_manager = BookstoreManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        success = await bookstore_manager.delete_book_link(book_link_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Book link not found")
+        return {"message": "Book link deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting book link: {str(e)}")
 
 # === ORDER MANAGEMENT ===
 
