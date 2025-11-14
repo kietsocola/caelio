@@ -967,38 +967,50 @@ async def get_book_recommendations(
         regular_books = [(book, score) for book, score, is_nsx in scored_books if not is_nsx]
         
         # Take top 2 nha_sach_xua books if available
-        guaranteed_nsx = nsx_books[:min(2, len(nsx_books))]
+        top_nsx = nsx_books[:min(2, len(nsx_books))]
         
         # Remaining nsx books compete with regular books by score
         remaining_nsx = nsx_books[2:]
-        all_remaining = regular_books + remaining_nsx
-        all_remaining.sort(key=lambda x: x[1], reverse=True)
+        all_other_books = regular_books + remaining_nsx
+        all_other_books.sort(key=lambda x: x[1], reverse=True)
         
-        # Tạo danh sách recommendations với guaranteed nha_sach_xua books
-        # Calculate remaining slots after guaranteed nsx books
-        remaining_slots = top_n - len(guaranteed_nsx)
-        
-        # Take top scoring books from all_remaining
-        top_books_count = int(remaining_slots * 2 / 3)
-        top_books = all_remaining[:top_books_count]
+        # Take top scoring + random books (excluding guaranteed nsx)
+        top_books_count = int(top_n * 2 / 3)
+        top_books = all_other_books[:top_books_count]
         
         # Add some randomization for diversity
-        random_books_count = remaining_slots - top_books_count
-        remaining_for_random = all_remaining[top_books_count:min(len(all_remaining), top_books_count + random_books_count * 3)]
+        random_books_count = top_n - top_books_count - len(top_nsx)  # Reserve slots for nsx
+        remaining_for_random = all_other_books[top_books_count:min(len(all_other_books), top_books_count + random_books_count * 3)]
         
         if len(remaining_for_random) > 0:
             random_books = random.sample(remaining_for_random, min(random_books_count, len(remaining_for_random)))
         else:
             random_books = []
         
-        # Combine: guaranteed top 2 nsx + top scoring + random for diversity
-        selected_books = guaranteed_nsx + top_books + random_books
+        # Combine top + random (without nsx yet)
+        other_books = top_books + random_books
+        random.shuffle(other_books)
         
-        # Shuffle only the non-guaranteed books
-        nsx_selected = selected_books[:len(guaranteed_nsx)]
-        others_selected = selected_books[len(guaranteed_nsx):]
-        random.shuffle(others_selected)
-        selected_books = nsx_selected + others_selected
+        # Insert nsx books in the middle positions
+        if len(top_nsx) == 0:
+            selected_books = other_books[:top_n]
+        elif len(top_nsx) == 1:
+            # 1 nsx: insert around middle
+            insert_pos = min(top_n // 2, len(other_books))
+            selected_books = other_books[:insert_pos] + top_nsx + other_books[insert_pos:]
+            selected_books = selected_books[:top_n]
+        else:
+            # 2 nsx: insert at ~1/3 and ~2/3 positions
+            first_insert = min(top_n // 3, len(other_books))
+            second_insert = min(2 * top_n // 3, len(other_books) + 1)
+            
+            # Insert first nsx
+            selected_books = other_books[:first_insert] + [top_nsx[0]] + other_books[first_insert:]
+            
+            # Insert second nsx
+            selected_books = selected_books[:second_insert] + [top_nsx[1]] + selected_books[second_insert:]
+            
+            selected_books = selected_books[:top_n]
         
         # Create recommendations từ danh sách đã xáo trộn
         recommendations = []

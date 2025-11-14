@@ -283,22 +283,33 @@ class EmotionalTestSystem:
         # Take top 2 nha_sach_xua books (if available)
         top_nsx = nsx_books[:min(2, len(nsx_books))]
         
-        # Calculate how many more books we need
-        remaining_slots = limit - len(top_nsx)
+        # Take all other books sorted by score
+        remaining_nsx = nsx_books[2:]
+        all_other_books = regular_books + remaining_nsx
+        all_other_books.sort(key=lambda x: x['match_score'], reverse=True)
         
-        # Fill with regular books (or remaining nsx books if they score high enough)
-        # Mix both lists and sort by actual score
-        remaining_nsx = nsx_books[2:]  # nsx books after top 2
-        remaining_pool = regular_books + remaining_nsx
-        remaining_pool.sort(key=lambda x: x['match_score'], reverse=True)
-        
-        # Take top scoring books from remaining pool
-        selected_remaining = remaining_pool[:remaining_slots]
-        
-        # Combine: guaranteed top 2 nsx + best scoring remaining
-        final_results = top_nsx + selected_remaining
-        
-        return final_results[:limit]
+        # Build final result: insert nsx books in the middle
+        if len(top_nsx) == 0:
+            # No nsx books, return top scoring books
+            return all_other_books[:limit]
+        elif len(top_nsx) == 1:
+            # 1 nsx book: put it around position limit//2
+            insert_pos = min(limit // 2, len(all_other_books))
+            final_results = all_other_books[:insert_pos] + top_nsx + all_other_books[insert_pos:]
+            return final_results[:limit]
+        else:
+            # 2 nsx books: spread them in middle third of results
+            # Position 1st nsx at ~1/3, 2nd nsx at ~2/3
+            first_insert = min(limit // 3, len(all_other_books))
+            second_insert = min(2 * limit // 3, len(all_other_books) + 1)
+            
+            # Insert first nsx book
+            final_results = all_other_books[:first_insert] + [top_nsx[0]] + all_other_books[first_insert:]
+            
+            # Insert second nsx book (adjust position since we added one book)
+            final_results = final_results[:second_insert] + [top_nsx[1]] + final_results[second_insert:]
+            
+            return final_results[:limit]
     
     def calculate_emotional_profile(self, answers: Dict[str, int], archetype: Optional[str] = None) -> EmotionalProfile:
         """Calculate emotional profile from answers"""
