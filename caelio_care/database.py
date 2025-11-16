@@ -48,6 +48,40 @@ class Database:
                 )
             ''')
             
+            # Add role column if it doesn't exist
+            await conn.execute('''
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='users' AND column_name='role'
+                    ) THEN
+                        ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user';
+                    END IF;
+                END $$;
+            ''')
+            
+            # Password reset tokens table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
+                    token VARCHAR(255) UNIQUE NOT NULL,
+                    expires_at TIMESTAMP NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create index for faster token lookups
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token 
+                ON password_reset_tokens(token)
+            ''')
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at 
+                ON password_reset_tokens(expires_at)
+            ''')
+            
             # Emotional test results
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS emotional_test_results (

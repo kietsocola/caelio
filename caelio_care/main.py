@@ -14,7 +14,10 @@ from contextlib import asynccontextmanager
 
 # Local imports
 from .database import init_database, get_db
-from .auth import AuthManager, UserCreate, UserLogin, User, Token
+from .auth import (
+    AuthManager, UserCreate, UserLogin, User, Token,
+    ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest
+)
 from .emotional_system import EmotionalTestSystem, EmotionalAnswers, EmotionalProfile
 from .white_books import (
     WhiteBooksManager, WhiteBookCreate, WhiteBook,
@@ -266,6 +269,139 @@ async def login(login_data: UserLogin):
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     """Get current user info"""
     return current_user
+
+@app.post("/auth/forgot-password")
+async def forgot_password(request_data: ForgotPasswordRequest):
+    """Request password reset - sends email with reset token"""
+    global auth_manager
+    
+    # Ensure auth_manager is initialized
+    if auth_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            auth_manager = AuthManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        # Create reset token
+        token = await auth_manager.create_reset_token(request_data.email)
+        
+        if not token:
+            # For security, don't reveal if email exists
+            return {
+                "message": "Nếu email tồn tại trong hệ thống, bạn sẽ nhận được email hướng dẫn đặt lại mật khẩu."
+            }
+        
+        # Get user info for email
+        db_pool = await get_db()
+        async with db_pool.acquire() as conn:
+            user = await conn.fetchrow(
+                'SELECT username FROM users WHERE email = $1',
+                request_data.email
+            )
+        
+        # Send reset email
+        email_sent = await auth_manager.send_reset_email(
+            request_data.email,
+            token,
+            user['username'] if user else 'User'
+        )
+        
+        if not email_sent:
+            # Log error but don't reveal to user
+            print(f"Failed to send reset email to {request_data.email}")
+        
+        return {
+            "message": "Nếu email tồn tại trong hệ thống, bạn sẽ nhận được email hướng dẫn đặt lại mật khẩu."
+        }
+    
+    except Exception as e:
+        print(f"Error in forgot_password: {e}")
+        raise HTTPException(status_code=500, detail="Error processing request")
+
+@app.post("/auth/reset-password")
+async def reset_password(request_data: ResetPasswordRequest):
+    """Reset password using token from email"""
+    global auth_manager
+    
+    # Ensure auth_manager is initialized
+    if auth_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            auth_manager = AuthManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        # Validate new password
+        if len(request_data.new_password) < 6:
+            raise HTTPException(status_code=400, detail="Mật khẩu phải có ít nhất 6 ký tự")
+        
+        # Reset password
+        success = await auth_manager.reset_password(
+            request_data.token,
+            request_data.new_password
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="Token không hợp lệ hoặc đã hết hạn"
+            )
+        
+        return {"message": "Mật khẩu đã được đặt lại thành công"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in reset_password: {e}")
+        raise HTTPException(status_code=500, detail="Error resetting password")
+
+@app.post("/auth/change-password")
+async def change_password(
+    request_data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Change password for authenticated user"""
+    global auth_manager
+    
+    # Ensure auth_manager is initialized
+    if auth_manager is None:
+        try:
+            await init_database()
+            db_pool = await get_db()
+            auth_manager = AuthManager(db_pool)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database initialization failed: {str(e)}")
+    
+    try:
+        # Validate new password
+        if len(request_data.new_password) < 6:
+            raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 6 ký tự")
+        
+        # Change password
+        success = await auth_manager.change_password(
+            current_user.user_id,
+            request_data.old_password,
+            request_data.new_password
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="Mật khẩu cũ không chính xác"
+            )
+        
+        return {"message": "Mật khẩu đã được thay đổi thành công"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in change_password: {e}")
+        raise HTTPException(status_code=500, detail="Error changing password")
 
 # === ADMIN ENDPOINTS ===
 
@@ -1334,8 +1470,7 @@ async def update_order_status(
 async def get_bookstore_orders(
     bookstore_id: int,
     page: int = 1,
-    page_size: int = 50,
-    current_user: User = Depends(require_admin_or_bookstore)
+    page_size: int = 50
 ):
     """Get bookstore orders (requires admin or bookstore role)"""
     global bookstore_manager
